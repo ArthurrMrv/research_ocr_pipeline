@@ -13,6 +13,8 @@ dependencies = [
     "Pillow",
     "pymupdf",
     "python-dotenv",
+    "jsonschema>=4.0",
+    "anthropic>=0.25",
     "ipykernel>=7.2.0",
     "ipywidgets>=8.1.8",
     "pip>=26.0.1",

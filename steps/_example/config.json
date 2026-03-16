@@ -1,0 +1,6 @@
+{
+  "provider": "moonshot",
+  "model": "kimi-k2.5",
+  "temperature": 0,
+  "max_tokens": 2048
+}

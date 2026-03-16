@@ -1,70 +1,113 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import jsonschema
 import pytest
 
-from pipeline.formatting import call_llm, get_kimi_client, load_prompt, run_formatting
+from pipeline.formatting import load_step, run_formatting, run_step, validate_output
 
 
-class TestGetKimiClient:
-    def test_creates_client_with_env_vars(self):
-        with patch("pipeline.formatting.OpenAI") as mock_openai:
-            mock_openai.return_value = MagicMock()
-            client = get_kimi_client()
-            mock_openai.assert_called_once_with(
-                api_key="test-moonshot-key",
-                base_url="https://api.moonshot.ai/v1",
-            )
+def _make_step_dir(tmp_path, step_name, config=None, schema=None, prompt=None):
+    step_dir = tmp_path / step_name
+    step_dir.mkdir()
+    (step_dir / "prompt.txt").write_text(prompt or "Extract: {ocr_text}")
+    (step_dir / "schema.json").write_text(
+        json.dumps(
+            schema
+            or {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "required": ["result"],
+                "properties": {"result": {"type": ["string", "null"]}},
+            }
+        )
+    )
+    (step_dir / "config.json").write_text(
+        json.dumps(config or {"provider": "moonshot", "model": "kimi-k2.5"})
+    )
+    return step_dir
 
-    def test_raises_on_missing_api_key(self, monkeypatch):
-        monkeypatch.delenv("MOONSHOT_API_KEY")
-        with pytest.raises(KeyError):
-            get_kimi_client()
 
+class TestLoadStep:
+    def test_loads_all_three_files(self, tmp_path):
+        _make_step_dir(tmp_path, "my_step", prompt="Hello {ocr_text}")
+        with patch("pipeline.formatting.STEPS_DIR", tmp_path):
+            prompt, schema, config = load_step("my_step")
+        assert "{ocr_text}" in prompt
+        assert "type" in schema
+        assert "provider" in config
 
-class TestLoadPrompt:
-    def test_loads_existing_prompt(self, tmp_path):
-        with patch("pipeline.formatting.PROMPTS_DIR", tmp_path):
-            prompt_file = tmp_path / "test_step.txt"
-            prompt_file.write_text("Test prompt {ocr_text}")
-            result = load_prompt("test_step")
-            assert result == "Test prompt {ocr_text}"
-
-    def test_raises_on_missing_prompt(self, tmp_path):
-        with patch("pipeline.formatting.PROMPTS_DIR", tmp_path):
+    def test_raises_on_missing_step(self, tmp_path):
+        with patch("pipeline.formatting.STEPS_DIR", tmp_path):
             with pytest.raises(FileNotFoundError):
-                load_prompt("nonexistent_step")
+                load_step("nonexistent_step")
 
 
-class TestCallLlm:
-    def test_parses_json_response(self):
-        mock_client = MagicMock()
-        response_content = json.dumps({"model_name": "TestModel"})
-        mock_client.chat.completions.create.return_value.choices[
-            0
-        ].message.content = response_content
+class TestValidateOutput:
+    _schema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["value"],
+        "properties": {"value": {"type": "string"}},
+    }
 
-        result = call_llm(mock_client, "Extract model: {ocr_text}", "some ocr text")
+    def test_passes_valid_output(self):
+        validate_output({"value": "hello"}, self._schema, "test_step")
 
-        assert result == {"model_name": "TestModel"}
+    def test_raises_on_invalid_output(self):
+        with pytest.raises(jsonschema.ValidationError):
+            validate_output({"value": 123}, self._schema, "test_step")
 
-    def test_fills_ocr_text_in_prompt(self):
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value.choices[
-            0
-        ].message.content = "{}"
-        call_llm(mock_client, "Text: {ocr_text}", "my ocr content")
-        call_args = mock_client.chat.completions.create.call_args
-        messages = call_args[1]["messages"]
-        assert "my ocr content" in messages[0]["content"]
+    def test_raises_on_missing_required_key(self):
+        with pytest.raises(jsonschema.ValidationError):
+            validate_output({}, self._schema, "test_step")
 
-    def test_raises_on_invalid_json(self):
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value.choices[
-            0
-        ].message.content = "not valid json"
-        with pytest.raises(ValueError, match="non-JSON"):
-            call_llm(mock_client, "prompt", "ocr text")
+
+class TestRunStep:
+    def test_returns_valid_result(self, tmp_path):
+        _make_step_dir(tmp_path, "step1")
+        mock_provider = MagicMock()
+        mock_provider.call.return_value = {"result": "found"}
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.get_provider", return_value=mock_provider),
+        ):
+            result = run_step("step1", "some ocr text")
+
+        assert result == {"result": "found"}
+        mock_provider.call.assert_called_once()
+
+    def test_retries_on_schema_failure_then_returns_none(self, tmp_path):
+        _make_step_dir(tmp_path, "step1")
+        mock_provider = MagicMock()
+        # Always returns wrong shape
+        mock_provider.call.return_value = {"wrong_key": "value"}
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.get_provider", return_value=mock_provider),
+        ):
+            result = run_step("step1", "ocr text")
+
+        assert result is None
+        assert mock_provider.call.call_count == 2  # tried twice
+
+    def test_returns_result_on_second_attempt(self, tmp_path):
+        _make_step_dir(tmp_path, "step1")
+        mock_provider = MagicMock()
+        mock_provider.call.side_effect = [
+            {"wrong_key": "bad"},    # first attempt fails validation
+            {"result": "ok"},        # second attempt passes
+        ]
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.get_provider", return_value=mock_provider),
+        ):
+            result = run_step("step1", "ocr text")
+
+        assert result == {"result": "ok"}
 
 
 class TestRunFormatting:
@@ -90,46 +133,57 @@ class TestRunFormatting:
         client.table.side_effect = table_side_effect
         return client
 
-    def test_skips_if_all_steps_done(self):
+    def test_skips_if_all_steps_done(self, tmp_path):
         pipeline_row = {
             "doc_id": "doc1",
             "last_formatting": "2024-01-01T00:00:00+00:00",
-            "formatting_nb": 2,  # matches len(ACTIVE_STEPS) = 2
+            "formatting_nb": 2,
         }
         client = self._make_client(pipeline_row)
-        mock_kimi = MagicMock()
 
-        run_formatting("doc1", client, mock_kimi)
-
-        mock_kimi.chat.completions.create.assert_not_called()
+        with patch("pipeline.formatting.run_step") as mock_step:
+            run_formatting("doc1", client)
+            mock_step.assert_not_called()
 
     def test_raises_if_no_pipeline_row(self):
         client = self._make_client(pipeline_row=None)
-        mock_kimi = MagicMock()
         with pytest.raises(ValueError, match="No pipeline row"):
-            run_formatting("doc1", client, mock_kimi)
+            run_formatting("doc1", client)
 
     def test_raises_if_no_ocr_results(self):
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
         client = self._make_client(pipeline_row, ocr_row=None)
-        mock_kimi = MagicMock()
         with pytest.raises(ValueError, match="No OCR results"):
-            run_formatting("doc1", client, mock_kimi)
+            run_formatting("doc1", client)
 
     def test_runs_all_steps(self, tmp_path):
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
         ocr_row = {"content": "sample ocr text"}
         client = self._make_client(pipeline_row, ocr_row)
 
-        mock_kimi = MagicMock()
-        mock_kimi.chat.completions.create.return_value.choices[
-            0
-        ].message.content = '{"result": "ok"}'
+        step_result = {"result": "ok"}
 
-        prompt_content = "Process: {ocr_text}"
-        with patch("pipeline.formatting.PROMPTS_DIR", tmp_path):
-            for step in ["extract_model_name", "extract_table"]:
-                (tmp_path / f"{step}.txt").write_text(prompt_content)
-            run_formatting("doc1", client, mock_kimi)
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.run_step", return_value=step_result) as mock_step,
+            patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
+        ):
+            run_formatting("doc1", client)
 
-        assert mock_kimi.chat.completions.create.call_count == 2
+        assert mock_step.call_count == 2
+
+    def test_soft_fails_on_schema_error(self, tmp_path):
+        pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
+        ocr_row = {"content": "sample ocr text"}
+        client = self._make_client(pipeline_row, ocr_row)
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.run_step", return_value=None),
+            patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
+            patch("pipeline.formatting.append_error") as mock_err,
+        ):
+            run_formatting("doc1", client)
+
+        # Should have logged errors for both steps that returned None
+        assert mock_err.call_count == 2

@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["result"],
+  "properties": {
+    "result": {
+      "type": ["string", "null"],
+      "description": "The extracted value, or null if not found."
+    }
+  },
+  "additionalProperties": false
+}

@@ -3,7 +3,7 @@ from glob import glob
 import click
 from dotenv import load_dotenv
 
-from pipeline.formatting import get_kimi_client, run_formatting
+from pipeline.formatting import run_formatting
 from pipeline.ingest import ingest
 from pipeline.ocr import run_ocr
 from pipeline.tracker import get_all_doc_ids, get_supabase_client
@@ -22,7 +22,6 @@ def run(pdf_dir: str, parse_all: bool, parse_date: str | None) -> None:
     """Run the ingestion pipeline on all PDFs in PDF_DIR."""
     load_dotenv()
     supa = get_supabase_client()
-    kimi = get_kimi_client()
 
     pdfs = glob(f"{pdf_dir}/*.pdf")
     new_ids = ingest(pdfs, supa)
@@ -35,7 +34,7 @@ def run(pdf_dir: str, parse_all: bool, parse_date: str | None) -> None:
         run_ocr(doc_id, supa, force=parse_all, since=parse_date)
 
     for doc_id in all_ids:
-        run_formatting(doc_id, supa, kimi)
+        run_formatting(doc_id, supa)
 
     click.echo(f"Done. {len(new_ids)} new, {len(all_ids)} total.")
 

@@ -1,0 +1,23 @@
+# INSTRUCTIONS FOR THIS FILE
+# Replace this entire file with your extraction prompt.
+# Use {ocr_text} as the placeholder — it will be filled with the document's OCR output at runtime.
+# The prompt MUST instruct the model to return a JSON object only.
+# The JSON structure must match what you define in schema.json.
+#
+# Example structure:
+#
+# You are a financial document analyst. Given the following OCR text, extract [what you need].
+#
+# Return your answer as a JSON object with the following keys:
+#   - "key_name": description and type
+#
+# OCR TEXT:
+# {ocr_text}
+
+You are a financial document analyst. Given the following OCR text, extract the relevant information.
+
+Return your answer as a JSON object with a single key "result" containing a string.
+If the information is not found, return {"result": null}.
+
+OCR TEXT:
+{ocr_text}
