@@ -1,0 +1,11 @@
+You are a financial document analyst. Given the following OCR text extracted from a financial report, extract any tables present in the document.
+
+Return your answer as a JSON object with a single key "tables" containing a list of table objects. Each table object should have:
+- "title": the table title or heading (string or null)
+- "headers": list of column header strings
+- "rows": list of rows, where each row is a list of cell values
+
+If no tables are found, return {"tables": []}.
+
+OCR TEXT:
+{ocr_text}

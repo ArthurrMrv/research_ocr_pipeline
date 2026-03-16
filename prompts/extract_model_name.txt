@@ -1,0 +1,6 @@
+You are a financial document analyst. Given the following OCR text extracted from a financial report, extract the name of the financial model or product described.
+
+Return your answer as a JSON object with a single key "model_name" containing a string value. If no model name is found, return {"model_name": null}.
+
+OCR TEXT:
+{ocr_text}

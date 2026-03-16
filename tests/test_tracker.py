@@ -1,0 +1,150 @@
+import json
+from datetime import datetime, timezone
+from unittest.mock import MagicMock, call, patch
+
+import pytest
+
+from pipeline.tracker import (
+    append_error,
+    bronze_insert,
+    formatting_upsert,
+    get_all_doc_ids,
+    get_supabase_client,
+    pipeline_get,
+    pipeline_insert,
+    pipeline_update,
+    silver_upsert,
+)
+
+
+def _make_client(data=None):
+    """Helper: mock supabase client returning given data."""
+    client = MagicMock()
+    chain = MagicMock()
+    result = MagicMock()
+    result.data = data or []
+    chain.execute.return_value = result
+    chain.select.return_value = chain
+    chain.insert.return_value = chain
+    chain.update.return_value = chain
+    chain.upsert.return_value = chain
+    chain.eq.return_value = chain
+    client.table.return_value = chain
+    return client
+
+
+class TestGetSupabaseClient:
+    def test_creates_client_from_env(self):
+        with patch("pipeline.tracker.create_client") as mock_create:
+            mock_create.return_value = MagicMock()
+            client = get_supabase_client()
+            mock_create.assert_called_once_with(
+                "https://test.supabase.co", "test-service-key"
+            )
+
+    def test_raises_on_missing_env(self, monkeypatch):
+        monkeypatch.delenv("SUPABASE_URL")
+        with pytest.raises(KeyError):
+            get_supabase_client()
+
+
+class TestBronzeInsert:
+    def test_inserts_new_record(self):
+        client = _make_client()
+        bronze_insert(client, "doc1", "/path/file.pdf", "file.pdf")
+        client.table.assert_called_with("bronze_mapping")
+        client.table().insert.assert_called_with(
+            {"doc_id": "doc1", "file_path": "/path/file.pdf", "doc_name": "file.pdf"}
+        )
+
+
+class TestPipelineInsert:
+    def test_inserts_empty_row(self):
+        client = _make_client()
+        pipeline_insert(client, "doc1")
+        client.table.assert_called_with("pipeline")
+        client.table().insert.assert_called_with({"doc_id": "doc1"})
+
+
+class TestPipelineGet:
+    def test_returns_row_when_found(self):
+        row = {"doc_id": "doc1", "last_ocr": None}
+        client = _make_client(data=[row])
+        result = pipeline_get(client, "doc1")
+        assert result == row
+
+    def test_returns_none_when_not_found(self):
+        client = _make_client(data=[])
+        result = pipeline_get(client, "missing")
+        assert result is None
+
+
+class TestPipelineUpdate:
+    def test_updates_fields(self):
+        client = _make_client()
+        pipeline_update(client, "doc1", {"last_ocr": "2024-01-01T00:00:00+00:00"})
+        client.table().update.assert_called_with(
+            {"last_ocr": "2024-01-01T00:00:00+00:00"}
+        )
+        client.table().update().eq.assert_called_with("doc_id", "doc1")
+
+
+class TestSilverUpsert:
+    def test_upserts_to_table(self):
+        client = _make_client()
+        row = {"doc_id": "doc1", "ocr_model": "test-model", "content": "text"}
+        silver_upsert(client, "ocr_results", row)
+        client.table.assert_called_with("ocr_results")
+        client.table().upsert.assert_called_with(row)
+
+
+class TestFormattingUpsert:
+    def test_upserts_formatting_row(self):
+        client = _make_client()
+        row = {
+            "doc_id": "doc1",
+            "step_name": "extract_model_name",
+            "formatting_model": "kimi-k2.5",
+            "content": {"model_name": "test"},
+        }
+        formatting_upsert(client, row)
+        client.table.assert_called_with("formatting")
+        client.table().upsert.assert_called_with(row)
+
+
+class TestAppendError:
+    def test_appends_error_to_empty_array(self):
+        row = {"doc_id": "doc1", "error": []}
+        client = _make_client(data=[row])
+        append_error(client, "doc1", "Something failed")
+        update_call = client.table().update.call_args
+        updated_error = json.loads(update_call[0][0]["error"])
+        assert len(updated_error) == 1
+        assert updated_error[0]["message"] == "Something failed"
+
+    def test_appends_to_existing_errors(self):
+        existing = [{"message": "old error", "ts": "2024-01-01T00:00:00+00:00"}]
+        row = {"doc_id": "doc1", "error": existing}
+        client = _make_client(data=[row])
+        append_error(client, "doc1", "new error")
+        update_call = client.table().update.call_args
+        updated_error = json.loads(update_call[0][0]["error"])
+        assert len(updated_error) == 2
+
+    def test_no_op_when_doc_not_found(self):
+        client = _make_client(data=[])
+        append_error(client, "missing", "error")
+        client.table().update.assert_not_called()
+
+
+class TestGetAllDocIds:
+    def test_returns_list_of_ids(self):
+        data = [{"doc_id": "doc1"}, {"doc_id": "doc2"}]
+        client = _make_client(data=data)
+        result = get_all_doc_ids(client)
+        assert result == ["doc1", "doc2"]
+
+    def test_returns_empty_list_when_none(self):
+        client = _make_client(data=[])
+        result = get_all_doc_ids(client)
+        assert result == []
