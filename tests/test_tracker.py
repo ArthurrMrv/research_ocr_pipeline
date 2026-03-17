@@ -7,8 +7,11 @@ import pytest
 from pipeline.tracker import (
     append_error,
     bronze_insert,
+    delete_ocr_rows,
     formatting_upsert,
     get_all_doc_ids,
+    get_bronze_row,
+    get_ocr_chunks,
     get_supabase_client,
     pipeline_get,
     pipeline_insert,
@@ -28,6 +31,7 @@ def _make_client(data=None):
     chain.insert.return_value = chain
     chain.update.return_value = chain
     chain.upsert.return_value = chain
+    chain.delete.return_value = chain
     chain.eq.return_value = chain
     client.table.return_value = chain
     return client
@@ -53,6 +57,32 @@ class TestBronzeInsert:
         client = _make_client()
         bronze_insert(client, "doc1", "/path/file.pdf", "file.pdf")
         client.table.assert_called_with("bronze_mapping")
+        client.table().insert.assert_called_with(
+            {"doc_id": "doc1", "file_path": "/path/file.pdf", "doc_name": "file.pdf"}
+        )
+
+    def test_inserts_with_company_and_date(self):
+        client = _make_client()
+        bronze_insert(
+            client, "doc1", "/path/file.pdf", "Apple_2024-01-01.pdf",
+            company_name="Apple", report_date="2024-01-01",
+        )
+        client.table().insert.assert_called_with(
+            {
+                "doc_id": "doc1",
+                "file_path": "/path/file.pdf",
+                "doc_name": "Apple_2024-01-01.pdf",
+                "company_name": "Apple",
+                "report_date": "2024-01-01",
+            }
+        )
+
+    def test_omits_none_company_and_date(self):
+        client = _make_client()
+        bronze_insert(
+            client, "doc1", "/path/file.pdf", "file.pdf",
+            company_name=None, report_date=None,
+        )
         client.table().insert.assert_called_with(
             {"doc_id": "doc1", "file_path": "/path/file.pdf", "doc_name": "file.pdf"}
         )
@@ -148,3 +178,42 @@ class TestGetAllDocIds:
         client = _make_client(data=[])
         result = get_all_doc_ids(client)
         assert result == []
+
+
+class TestGetBronzeRow:
+    def test_returns_row_when_found(self):
+        row = {"doc_id": "doc1", "file_path": "/path.pdf", "company_name": "Apple"}
+        client = _make_client(data=[row])
+        result = get_bronze_row(client, "doc1")
+        assert result == row
+
+    def test_returns_none_when_not_found(self):
+        client = _make_client(data=[])
+        result = get_bronze_row(client, "missing")
+        assert result is None
+
+
+class TestGetOcrChunks:
+    def test_returns_sorted_chunks(self):
+        data = [
+            {"doc_id": "doc1", "pages": "76-150", "content": "chunk2"},
+            {"doc_id": "doc1", "pages": "1-75", "content": "chunk1"},
+        ]
+        client = _make_client(data=data)
+        result = get_ocr_chunks(client, "doc1")
+        assert result[0]["pages"] == "1-75"
+        assert result[1]["pages"] == "76-150"
+
+    def test_returns_empty_list_when_none(self):
+        client = _make_client(data=[])
+        result = get_ocr_chunks(client, "doc1")
+        assert result == []
+
+
+class TestDeleteOcrRows:
+    def test_calls_delete_with_doc_id(self):
+        client = _make_client()
+        delete_ocr_rows(client, "doc1")
+        client.table.assert_called_with("ocr_results")
+        client.table().delete.assert_called_once()
+        client.table().delete().eq.assert_called_with("doc_id", "doc1")

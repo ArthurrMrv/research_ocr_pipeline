@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from pipeline.ocr import _after_date, ocr_image, pdf_to_images, run_ocr
+from pipeline.ocr import _after_date, make_page_range, pdf_to_images, run_ocr
 
 
 class TestAfterDate:
@@ -29,21 +29,15 @@ class TestAfterDate:
         assert _after_date(row, "2024-01-01") is False
 
 
-class TestOcrImage:
-    def test_calls_model_and_returns_text(self):
-        image = Image.new("RGB", (10, 10))
-        mock_processor = MagicMock()
-        mock_model = MagicMock()
+class TestMakePageRange:
+    def test_single_batch(self):
+        assert make_page_range(1, 75) == "1-75"
 
-        mock_processor.return_value = {"input_ids": MagicMock()}
-        mock_model.generate.return_value = MagicMock()
-        mock_processor.batch_decode.return_value = ["  extracted text  "]
+    def test_second_batch(self):
+        assert make_page_range(76, 150) == "76-150"
 
-        result = ocr_image(image, mock_model, mock_processor)
-
-        assert result == "extracted text"
-        mock_model.generate.assert_called_once()
-        mock_processor.batch_decode.assert_called_once()
+    def test_partial_batch(self):
+        assert make_page_range(151, 200) == "151-200"
 
 
 class TestPdfToImages:
@@ -76,6 +70,7 @@ class TestRunOcr:
             chain.select.return_value = chain
             chain.update.return_value = chain
             chain.upsert.return_value = chain
+            chain.delete.return_value = chain
             chain.eq.return_value = chain
             return chain
 
@@ -86,9 +81,9 @@ class TestRunOcr:
         pipeline_row = self._make_pipeline_row(last_ocr="2024-01-01T00:00:00+00:00")
         client = self._make_client(pipeline_row)
 
-        with patch("pipeline.ocr.load_ocr_model") as mock_load:
+        with patch("pipeline.ocr.get_ocr_provider") as mock_provider:
             run_ocr("doc1", client, force=False, since=None)
-            mock_load.assert_not_called()
+            mock_provider.assert_not_called()
 
     def test_raises_if_no_pipeline_row(self):
         client = self._make_client(pipeline_row=None)
@@ -100,15 +95,13 @@ class TestRunOcr:
         bronze_row = self._make_bronze_row(file_path=fixture_pdf)
         client = self._make_client(pipeline_row, bronze_row)
 
-        mock_model = MagicMock()
-        mock_processor = MagicMock()
-        mock_processor.return_value = {}
-        mock_model.generate.return_value = MagicMock()
-        mock_processor.batch_decode.return_value = ["page text"]
+        mock_provider = MagicMock()
+        mock_provider.ocr_pages.return_value = "page text"
 
-        with patch("pipeline.ocr.load_ocr_model", return_value=(mock_model, mock_processor)):
+        with patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider):
             run_ocr("doc1", client)
 
+        mock_provider.ocr_pages.assert_called_once()
         # Should have called upsert on ocr_results
         upsert_calls = [
             c for c in client.table.call_args_list if c[0][0] == "ocr_results"
@@ -120,13 +113,73 @@ class TestRunOcr:
         bronze_row = self._make_bronze_row(file_path=fixture_pdf)
         client = self._make_client(pipeline_row, bronze_row)
 
-        mock_model = MagicMock()
-        mock_processor = MagicMock()
-        mock_processor.return_value = {}
-        mock_model.generate.return_value = MagicMock()
-        mock_processor.batch_decode.return_value = ["page text"]
+        mock_provider = MagicMock()
+        mock_provider.ocr_pages.return_value = "page text"
 
-        with patch("pipeline.ocr.load_ocr_model", return_value=(mock_model, mock_processor)):
+        with patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider):
             run_ocr("doc1", client, force=True)
 
-        mock_model.generate.assert_called()
+        mock_provider.ocr_pages.assert_called()
+
+    def test_chunks_pages_in_batches(self, fixture_pdf):
+        """Test that pages are chunked when exceeding MAX_PAGES_PER_BATCH."""
+        pipeline_row = self._make_pipeline_row(last_ocr=None)
+        bronze_row = self._make_bronze_row(file_path=fixture_pdf)
+        client = self._make_client(pipeline_row, bronze_row)
+
+        # Create 100 fake images to simulate a long document
+        fake_images = [Image.new("RGB", (10, 10)) for _ in range(100)]
+        mock_provider = MagicMock()
+        mock_provider.ocr_pages.return_value = "chunk text"
+
+        with (
+            patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider),
+            patch("pipeline.ocr.pdf_to_images", return_value=fake_images),
+            patch("pipeline.ocr.MAX_PAGES_PER_BATCH", 75),
+        ):
+            run_ocr("doc1", client)
+
+        # Should be called twice: 75 pages + 25 pages
+        assert mock_provider.ocr_pages.call_count == 2
+        first_batch = mock_provider.ocr_pages.call_args_list[0][0][0]
+        second_batch = mock_provider.ocr_pages.call_args_list[1][0][0]
+        assert len(first_batch) == 75
+        assert len(second_batch) == 25
+
+    def test_page_offset_passed_to_provider(self, fixture_pdf):
+        """Second chunk should have page_offset=75 so pages are numbered 76+."""
+        pipeline_row = self._make_pipeline_row(last_ocr=None)
+        bronze_row = self._make_bronze_row(file_path=fixture_pdf)
+        client = self._make_client(pipeline_row, bronze_row)
+
+        fake_images = [Image.new("RGB", (10, 10)) for _ in range(100)]
+        mock_provider = MagicMock()
+        mock_provider.ocr_pages.return_value = "chunk text"
+
+        with (
+            patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider),
+            patch("pipeline.ocr.pdf_to_images", return_value=fake_images),
+            patch("pipeline.ocr.MAX_PAGES_PER_BATCH", 75),
+        ):
+            run_ocr("doc1", client)
+
+        first_call_kwargs = mock_provider.ocr_pages.call_args_list[0][1]
+        second_call_kwargs = mock_provider.ocr_pages.call_args_list[1][1]
+        assert first_call_kwargs["page_offset"] == 0
+        assert second_call_kwargs["page_offset"] == 75
+
+    def test_deletes_existing_rows_before_reocr(self, fixture_pdf):
+        pipeline_row = self._make_pipeline_row(last_ocr=None)
+        bronze_row = self._make_bronze_row(file_path=fixture_pdf)
+        client = self._make_client(pipeline_row, bronze_row)
+
+        mock_provider = MagicMock()
+        mock_provider.ocr_pages.return_value = "page text"
+
+        with (
+            patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider),
+            patch("pipeline.ocr.delete_ocr_rows") as mock_delete,
+        ):
+            run_ocr("doc1", client)
+
+        mock_delete.assert_called_once_with(client, "doc1")

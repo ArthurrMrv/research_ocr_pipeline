@@ -12,6 +12,8 @@ class TestRegistry:
         assert "moonshot" in PROVIDERS
         assert "openai" in PROVIDERS
         assert "anthropic" in PROVIDERS
+        assert "gemini" in PROVIDERS
+        assert "dashscope" in PROVIDERS
 
     def test_get_provider_returns_instance(self):
         config = {"provider": "moonshot", "model": "kimi-k2.5"}
@@ -131,3 +133,116 @@ class TestAnthropicProvider:
         from pipeline.providers.anthropic_provider import AnthropicProvider
         with pytest.raises(KeyError):
             AnthropicProvider({"model": "claude-sonnet-4-6"})
+
+
+def _make_openai_response(content: str):
+    msg = MagicMock()
+    msg.content = content
+    choice = MagicMock()
+    choice.message = msg
+    response = MagicMock()
+    response.choices = [choice]
+    return response
+
+
+_STEP_CONFIG = {"model": "test-model", "temperature": 0, "max_tokens": 512}
+
+
+class TestGeminiProvider:
+    def test_init_requires_google_api_key(self, monkeypatch):
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        from pipeline.providers.gemini_provider import GeminiProvider
+        with patch("pipeline.providers.gemini_provider.OpenAI"):
+            with pytest.raises(KeyError):
+                GeminiProvider(_STEP_CONFIG)
+
+    def test_call_returns_parsed_json(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
+        payload = {"result": "gemini answer"}
+        mock_response = _make_openai_response(json.dumps(payload))
+
+        from pipeline.providers.gemini_provider import GeminiProvider
+        with patch("pipeline.providers.gemini_provider.OpenAI") as mock_openai_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai_cls.return_value = mock_client
+
+            provider = GeminiProvider(_STEP_CONFIG)
+            result = provider.call("Extract: {ocr_text}", "some ocr")
+
+        assert result == payload
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs["model"] == "test-model"
+
+    def test_call_raises_on_non_json(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
+        mock_response = _make_openai_response("not json at all")
+
+        from pipeline.providers.gemini_provider import GeminiProvider
+        with patch("pipeline.providers.gemini_provider.OpenAI") as mock_openai_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai_cls.return_value = mock_client
+
+            provider = GeminiProvider(_STEP_CONFIG)
+            with pytest.raises(ValueError, match="non-JSON"):
+                provider.call("prompt {ocr_text}", "text")
+
+    def test_uses_gemini_base_url(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
+        from pipeline.providers.gemini_provider import GeminiProvider
+        with patch("pipeline.providers.gemini_provider.OpenAI") as mock_openai_cls:
+            mock_openai_cls.return_value = MagicMock()
+            GeminiProvider(_STEP_CONFIG)
+
+        _, kwargs = mock_openai_cls.call_args
+        assert "generativelanguage.googleapis.com" in kwargs["base_url"]
+
+
+class TestDashScopeProvider:
+    def test_init_requires_dashscope_api_key(self, monkeypatch):
+        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+        from pipeline.providers.dashscope_provider import DashScopeProvider
+        with patch("pipeline.providers.dashscope_provider.OpenAI"):
+            with pytest.raises(KeyError):
+                DashScopeProvider(_STEP_CONFIG)
+
+    def test_call_returns_parsed_json(self, monkeypatch):
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
+        payload = {"result": "dashscope answer"}
+        mock_response = _make_openai_response(json.dumps(payload))
+
+        from pipeline.providers.dashscope_provider import DashScopeProvider
+        with patch("pipeline.providers.dashscope_provider.OpenAI") as mock_openai_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai_cls.return_value = mock_client
+
+            provider = DashScopeProvider(_STEP_CONFIG)
+            result = provider.call("Extract: {ocr_text}", "ocr text")
+
+        assert result == payload
+
+    def test_call_raises_on_non_json(self, monkeypatch):
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
+        mock_response = _make_openai_response("not json")
+
+        from pipeline.providers.dashscope_provider import DashScopeProvider
+        with patch("pipeline.providers.dashscope_provider.OpenAI") as mock_openai_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai_cls.return_value = mock_client
+
+            provider = DashScopeProvider(_STEP_CONFIG)
+            with pytest.raises(ValueError, match="non-JSON"):
+                provider.call("prompt {ocr_text}", "text")
+
+    def test_uses_dashscope_base_url(self, monkeypatch):
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
+        from pipeline.providers.dashscope_provider import DashScopeProvider
+        with patch("pipeline.providers.dashscope_provider.OpenAI") as mock_openai_cls:
+            mock_openai_cls.return_value = MagicMock()
+            DashScopeProvider(_STEP_CONFIG)
+
+        _, kwargs = mock_openai_cls.call_args
+        assert "dashscope.aliyuncs.com" in kwargs["base_url"]

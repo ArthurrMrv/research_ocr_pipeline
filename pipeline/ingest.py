@@ -3,6 +3,7 @@ import uuid
 
 from supabase import Client
 
+from pipeline.filename_parser import parse_filename
 from pipeline.tracker import bronze_insert, get_all_doc_ids, pipeline_insert
 
 UUID_NS = uuid.UUID("12345678-1234-5678-1234-567812345678")
@@ -28,7 +29,15 @@ def ingest(pdf_paths: list[str], client: Client) -> list[str]:
             continue
 
         doc_name = os.path.basename(path)
-        bronze_insert(client, doc_id, os.path.abspath(path), doc_name)
+        company_name, report_date = parse_filename(doc_name)
+        bronze_insert(
+            client,
+            doc_id,
+            os.path.abspath(path),
+            doc_name,
+            company_name=company_name,
+            report_date=report_date,
+        )
         pipeline_insert(client, doc_id)
         new_ids.append(doc_id)
 

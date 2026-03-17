@@ -1,5 +1,7 @@
 from pipeline.providers.anthropic_provider import AnthropicProvider
 from pipeline.providers.base import LLMProvider
+from pipeline.providers.dashscope_provider import DashScopeProvider
+from pipeline.providers.gemini_provider import GeminiProvider
 from pipeline.providers.moonshot import MoonshotProvider
 from pipeline.providers.openai_provider import OpenAIProvider
 
@@ -7,6 +9,8 @@ PROVIDERS: dict[str, type[LLMProvider]] = {
     "moonshot": MoonshotProvider,
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
+    "gemini": GeminiProvider,
+    "dashscope": DashScopeProvider,
 }
 
 

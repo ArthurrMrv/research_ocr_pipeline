@@ -44,3 +44,5 @@ coverage.xml
 # Logs
 *.log
 logs/
+
+reports/*

@@ -11,11 +11,22 @@ def get_supabase_client() -> Client:
     return create_client(url, key)
 
 
-def bronze_insert(client: Client, doc_id: str, file_path: str, doc_name: str) -> None:
+def bronze_insert(
+    client: Client,
+    doc_id: str,
+    file_path: str,
+    doc_name: str,
+    *,
+    company_name: str | None = None,
+    report_date: str | None = None,
+) -> None:
     """Insert a new bronze record. Raises on conflict (duplicate doc_id)."""
-    client.table("bronze_mapping").insert(
-        {"doc_id": doc_id, "file_path": file_path, "doc_name": doc_name}
-    ).execute()
+    row: dict = {"doc_id": doc_id, "file_path": file_path, "doc_name": doc_name}
+    if company_name is not None:
+        row["company_name"] = company_name
+    if report_date is not None:
+        row["report_date"] = report_date
+    client.table("bronze_mapping").insert(row).execute()
 
 
 def pipeline_insert(client: Client, doc_id: str) -> None:
@@ -62,3 +73,46 @@ def get_all_doc_ids(client: Client) -> list[str]:
     """Return all doc_ids registered in bronze_mapping."""
     result = client.table("bronze_mapping").select("doc_id").execute()
     return [row["doc_id"] for row in result.data]
+
+
+def get_bronze_row(client: Client, doc_id: str) -> dict | None:
+    """Return the bronze_mapping row for a doc_id, or None if not found."""
+    result = (
+        client.table("bronze_mapping").select("*").eq("doc_id", doc_id).execute()
+    )
+    rows = result.data
+    return rows[0] if rows else None
+
+
+def get_ocr_chunks(client: Client, doc_id: str) -> list[dict]:
+    """Return all ocr_results rows for doc_id, sorted by pages field."""
+    result = (
+        client.table("ocr_results")
+        .select("*")
+        .eq("doc_id", doc_id)
+        .execute()
+    )
+    rows = result.data or []
+    return sorted(rows, key=lambda r: r.get("pages", "all"))
+
+
+def delete_ocr_rows(client: Client, doc_id: str) -> None:
+    """Delete all ocr_results rows for a doc_id (cleanup before re-OCR)."""
+    client.table("ocr_results").delete().eq("doc_id", doc_id).execute()
+
+
+def scout_upsert(client: Client, row: dict) -> None:
+    """Upsert a scout result keyed by (doc_id, step_name)."""
+    client.table("scout_results").upsert(row).execute()
+
+
+def get_scout_results(client: Client, doc_id: str) -> dict:
+    """Return scout results as {step_name: row_dict} for a doc_id."""
+    result = (
+        client.table("scout_results")
+        .select("*")
+        .eq("doc_id", doc_id)
+        .execute()
+    )
+    rows = result.data or []
+    return {row["step_name"]: row for row in rows}
