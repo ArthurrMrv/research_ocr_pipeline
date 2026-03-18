@@ -1,12 +1,56 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ModelExtractor",
   "type": "object",
-  "required": ["model_name"],
+  "required": ["simulation_engines", "variables_and_risk_factors"],
   "properties": {
-    "model_name": {
-      "type": ["string", "null"],
-      "description": "The name of the financial model or product described in the document."
+
+    "simulation_engines": {
+      "type": "array",
+      "description": "Primary engines or frameworks, named or functionally described.",
+      "items": {
+        "type": "object",
+        "required": ["engine_name", "institution_or_vendor"],
+        "properties": {
+          "engine_name":            { "type": "string" },
+          "institution_or_vendor":  { "type": "string" },
+          "core_purpose":           { "type": "string" },
+          "mathematical_methods": {
+            "type": "array",
+            "description": "Methods embedded in this engine specifically.",
+            "items": { "type": "string" }
+          },
+          "sub_models": {
+            "type": "array",
+            "description": "Asset-class-specific models nested within the engine.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sub_model_name":  { "type": "string" },
+                "asset_class":     { "type": "string" },
+                "method":          { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "variables_and_risk_factors": {
+      "type": "array",
+      "description": "All input variables grouped by category across all engines.",
+      "items": {
+        "type": "object",
+        "required": ["category", "variables"],
+        "properties": {
+          "category":  { "type": "string" },
+          "variables": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
     }
-  },
-  "additionalProperties": false
+
+  }
 }

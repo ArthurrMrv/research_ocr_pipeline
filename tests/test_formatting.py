@@ -5,6 +5,7 @@ import jsonschema
 import pytest
 
 from pipeline.formatting import load_step, run_formatting, run_step, validate_output
+from pipeline.step_errors import MissingPromptError
 
 
 def _make_step_dir(tmp_path, step_name, config=None, schema=None, prompt=None):
@@ -154,8 +155,8 @@ class TestRunStep:
 
         assert result == {"result": "ok"}
 
-    def test_returns_none_when_prompt_is_none(self, tmp_path):
-        """When per_company step has no matching prompt, returns None."""
+    def test_raises_missing_prompt_error_when_prompt_is_none(self, tmp_path):
+        """When per_company step has no matching prompt, raises MissingPromptError."""
         _make_step_dir(
             tmp_path, "step1",
             config={"provider": "moonshot", "model": "kimi-k2.5", "per_company": True},
@@ -164,9 +165,8 @@ class TestRunStep:
         (tmp_path / "step1" / "prompt.txt").unlink()
 
         with patch("pipeline.formatting.STEPS_DIR", tmp_path):
-            result = run_step("step1", "ocr text", institution="Unknown")
-
-        assert result is None
+            with pytest.raises(MissingPromptError):
+                run_step("step1", "ocr text", institution="Unknown")
 
     def test_passes_institution_to_load_step(self, tmp_path):
         _make_step_dir(tmp_path, "step1")
@@ -255,6 +255,7 @@ class TestRunFormatting:
         assert result["status"] == "done"
         assert result["completed_steps"] == 2
         assert result["failed_steps"] == 0
+        assert result["failed_details"] == []
 
     def test_soft_fails_on_schema_error(self, tmp_path):
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
@@ -274,6 +275,8 @@ class TestRunFormatting:
         assert result["status"] == "done"
         assert result["completed_steps"] == 0
         assert result["failed_steps"] == 2
+        assert len(result["failed_details"]) == 2
+        assert all(d["reason"] == "schema validation failed after retry" for d in result["failed_details"])
 
     def test_concatenates_multi_chunk_ocr_no_scout(self, tmp_path):
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
@@ -391,3 +394,67 @@ class TestRunFormatting:
         assert mock_step.call_count == 1
         mock_err.assert_called_once()
         assert "extract_table" in mock_err.call_args[0][2]
+
+    def test_failed_details_contains_provider_error(self, tmp_path):
+        """Provider exceptions produce failed_details with 'provider error: ...' reason."""
+        pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
+        ocr_chunks = [{"page_number": 1, "content": "text"}]
+        bronze_row = {"doc_id": "doc1", "institution": None}
+        client = self._make_client(pipeline_row, ocr_chunks, bronze_row, scout_rows=[])
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.run_step", side_effect=RuntimeError("429 Too Many Requests")),
+            patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
+            patch("pipeline.formatting.append_error"),
+        ):
+            result = run_formatting("doc1", client)
+
+        assert result["failed_steps"] == 2
+        assert len(result["failed_details"]) == 2
+        assert all("provider error:" in d["reason"] for d in result["failed_details"])
+        assert "429 Too Many Requests" in result["failed_details"][0]["reason"]
+
+    def test_failed_details_contains_missing_prompt(self, tmp_path):
+        """MissingPromptError produces failed_details with 'no prompt for institution' reason."""
+        pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
+        ocr_chunks = [{"page_number": 1, "content": "text"}]
+        bronze_row = {"doc_id": "doc1", "institution": "Unknown"}
+        client = self._make_client(pipeline_row, ocr_chunks, bronze_row, scout_rows=[])
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.run_step", side_effect=MissingPromptError("step1", "Unknown")),
+            patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
+            patch("pipeline.formatting.append_error"),
+        ):
+            result = run_formatting("doc1", client)
+
+        assert result["failed_steps"] == 2
+        assert all("no prompt for institution" in d["reason"] for d in result["failed_details"])
+
+    def test_failed_details_scout_no_range(self, tmp_path):
+        """Scout missing range produces failed_details with 'no scout page range' reason."""
+        pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
+        ocr_chunks = [{"page_number": 1, "content": "text"}]
+        bronze_row = {"doc_id": "doc1", "institution": None}
+        scout_rows = [
+            {"step_name": "extract_model_name", "start_page": 1, "end_page": 2, "scout_model": "gemini-2.0-flash-lite"},
+        ]
+        client = self._make_client(pipeline_row, ocr_chunks, bronze_row, scout_rows)
+
+        step_result = {"result": "ok"}
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.run_step", return_value=step_result),
+            patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
+            patch("pipeline.formatting.SCOUT_PAGE_PADDING", 0),
+            patch("pipeline.formatting.get_ocr_pages_for_range", return_value=ocr_chunks),
+            patch("pipeline.formatting.append_error"),
+        ):
+            result = run_formatting("doc1", client)
+
+        assert result["failed_steps"] == 1
+        assert result["failed_details"] == [{"step": "extract_table", "reason": "no scout page range"}]

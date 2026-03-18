@@ -6,7 +6,7 @@ from click.testing import CliRunner
 from main import run
 
 OCR_DONE = {"status": "done", "empty_pages": 0}
-FMT_DONE = {"status": "done", "completed_steps": 2, "failed_steps": 0}
+FMT_DONE = {"status": "done", "completed_steps": 2, "failed_steps": 0, "failed_details": []}
 
 
 class TestCli:
@@ -159,6 +159,37 @@ class TestCli:
             mock_ocr.assert_called_once()
             mock_scout.assert_not_called()
             mock_fmt.assert_not_called()
+
+    def test_formatting_warning_panel_shows_step_details(self, tmp_path):
+        """When formatting steps fail, the warning panel shows step names and reasons."""
+        pdf = tmp_path / "test.pdf"
+        pdf.touch()
+        runner = CliRunner()
+
+        fmt_with_failures = {
+            "status": "done",
+            "completed_steps": 0,
+            "failed_steps": 2,
+            "failed_details": [
+                {"step": "extract_model_name", "reason": "schema validation failed after retry"},
+                {"step": "extract_table", "reason": "no scout page range"},
+            ],
+        }
+
+        with (
+            patch("main.get_supabase_client"),
+            patch("main.ingest", return_value=["doc1"]),
+            patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.run_ocr", return_value=OCR_DONE),
+            patch("main.run_scout"),
+            patch("main.run_formatting", return_value=fmt_with_failures),
+        ):
+            result = runner.invoke(run, [str(tmp_path)])
+            assert result.exit_code == 0
+            assert "extract_model_name" in result.output
+            assert "schema validation failed after retry" in result.output
+            assert "extract_table" in result.output
+            assert "no scout page range" in result.output
 
     def test_no_step_flag_runs_all(self, tmp_path):
         runner = CliRunner()

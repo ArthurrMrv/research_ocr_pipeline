@@ -1,6 +1,26 @@
-You are a financial document analyst. Given the following OCR text extracted from a financial report, extract the name of the financial model or product described.
+Task: Analyze the provided financial document and extract all references to 
+simulation engines/models and the specific variables/inputs they use.
 
-Return your answer as a JSON object with a single key "model_name" containing a string value. If no model name is found, return {"model_name": null}.
+Context: Financial institutions use proprietary or third-party simulation 
+frameworks to project market scenarios. These may be named explicitly (e.g., 
+CASM, Aladdin, GEMS, GLASS, SGEM, Numerix ESG, Charles River) or described 
+functionally ("our internal stochastic framework", "proprietary ESG").
+
+Instructions:
+1. Identify the simulation engine or model — by name if given, by functional 
+   description if unnamed. Note the owning institution or vendor.
+2. Identify the mathematical methodologies embedded in it (e.g., Monte Carlo, 
+   Nelson-Siegel, Vasicek, Libor Market Model, Copulas, Regime-Switching).
+3. Extract all input variables and risk factors, grouped by category:
+   - Macroeconomic: GDP, inflation, unemployment...
+   - Interest Rates: yield curve, swap rates, short rate...
+   - Credit: default probabilities, spreads, recovery rates...
+   - Equities: volatility, dividends, sector returns...
+   - Other: FX, real estate, commodities, liquidity...
+4. If sub-models are specified per asset class (e.g., a separate credit model 
+   within a broader ESG), list them under the relevant engine.
+
+Return ONLY the JSON object. No preamble, no explanation, no markdown code fences.
 
 OCR TEXT:
 {ocr_text}

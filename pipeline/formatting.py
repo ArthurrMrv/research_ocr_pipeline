@@ -9,6 +9,7 @@ from supabase import Client
 from config import ACTIVE_STEPS, SCOUT_PAGE_PADDING, STEPS_DIR
 from pipeline.page_utils import get_total_pages
 from pipeline.providers.registry import get_provider
+from pipeline.step_errors import MissingPromptError
 from pipeline.tracker import (
     append_error,
     formatting_upsert,
@@ -85,7 +86,7 @@ def run_step(
     """
     prompt_text, schema, config = load_step(step_name, institution=institution)
     if prompt_text is None:
-        return None
+        raise MissingPromptError(step_name, institution)
     provider_name = config["provider"]
     provider = get_provider(provider_name, config)
 
@@ -119,7 +120,7 @@ def run_formatting(doc_id: str, supa_client: Client) -> dict:
         and pipeline_row.get("formatting_nb", 0) == len(ACTIVE_STEPS)
     )
     if already_done:
-        return {"status": "skipped", "completed_steps": 0, "failed_steps": 0}
+        return {"status": "skipped", "completed_steps": 0, "failed_steps": 0, "failed_details": []}
 
     # Fetch OCR chunks and concatenate
     ocr_chunks = get_ocr_chunks(supa_client, doc_id)
@@ -137,14 +138,17 @@ def run_formatting(doc_id: str, supa_client: Client) -> dict:
 
     completed_steps = 0
     failed_steps = 0
+    failed_details: list[dict] = []
     for step_name in ACTIVE_STEPS:
         if scout_results:
             if step_name not in scout_results:
+                reason = "no scout page range"
                 append_error(
                     supa_client,
                     doc_id,
                     f"Scout has no page range for step [{step_name}]; skipping",
                 )
+                failed_details.append({"step": step_name, "reason": reason})
                 failed_steps += 1
                 continue
             scout_range = scout_results[step_name]
@@ -160,17 +164,27 @@ def run_formatting(doc_id: str, supa_client: Client) -> dict:
 
         try:
             result = run_step(step_name, step_ocr_text, institution=institution)
+        except MissingPromptError:
+            reason = f"no prompt for institution '{institution}'"
+            append_error(supa_client, doc_id, f"Formatting error [{step_name}]: {reason}")
+            failed_details.append({"step": step_name, "reason": reason})
+            failed_steps += 1
+            continue
         except Exception as exc:
+            reason = f"provider error: {exc}"
             append_error(supa_client, doc_id, f"Formatting error [{step_name}]: {exc}")
+            failed_details.append({"step": step_name, "reason": reason})
             failed_steps += 1
             continue
 
         if result is None:
+            reason = "schema validation failed after retry"
             append_error(
                 supa_client,
                 doc_id,
                 f"Formatting step [{step_name}]: output failed schema validation after retry",
             )
+            failed_details.append({"step": step_name, "reason": reason})
             failed_steps += 1
             continue
 
@@ -198,4 +212,5 @@ def run_formatting(doc_id: str, supa_client: Client) -> dict:
         "status": "done",
         "completed_steps": completed_steps,
         "failed_steps": failed_steps,
+        "failed_details": failed_details,
     }

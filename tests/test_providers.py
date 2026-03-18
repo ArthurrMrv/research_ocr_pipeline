@@ -14,6 +14,7 @@ class TestRegistry:
         assert "anthropic" in PROVIDERS
         assert "gemini" in PROVIDERS
         assert "dashscope" in PROVIDERS
+        assert "openrouter" in PROVIDERS
 
     def test_get_provider_returns_instance(self):
         config = {"provider": "moonshot", "model": "kimi-k2.5"}
@@ -197,6 +198,57 @@ class TestGeminiProvider:
 
         _, kwargs = mock_openai_cls.call_args
         assert "generativelanguage.googleapis.com" in kwargs["base_url"]
+
+
+class TestOpenRouterProvider:
+    def test_init_requires_openrouter_api_key(self, monkeypatch):
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        from pipeline.providers.openrouter_provider import OpenRouterProvider
+        with patch("pipeline.providers.openrouter_provider.OpenAI"):
+            with pytest.raises(KeyError):
+                OpenRouterProvider(_STEP_CONFIG)
+
+    def test_call_returns_parsed_json(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        payload = {"result": "openrouter answer"}
+        mock_response = _make_openai_response(json.dumps(payload))
+
+        from pipeline.providers.openrouter_provider import OpenRouterProvider
+        with patch("pipeline.providers.openrouter_provider.OpenAI") as mock_openai_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai_cls.return_value = mock_client
+
+            provider = OpenRouterProvider(_STEP_CONFIG)
+            result = provider.call("Extract: {ocr_text}", "some ocr")
+
+        assert result == payload
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        assert call_kwargs["model"] == "test-model"
+
+    def test_call_raises_on_non_json(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        mock_response = _make_openai_response("not json")
+
+        from pipeline.providers.openrouter_provider import OpenRouterProvider
+        with patch("pipeline.providers.openrouter_provider.OpenAI") as mock_openai_cls:
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai_cls.return_value = mock_client
+
+            provider = OpenRouterProvider(_STEP_CONFIG)
+            with pytest.raises(ValueError, match="non-JSON"):
+                provider.call("prompt {ocr_text}", "text")
+
+    def test_uses_openrouter_base_url(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
+        from pipeline.providers.openrouter_provider import OpenRouterProvider
+        with patch("pipeline.providers.openrouter_provider.OpenAI") as mock_openai_cls:
+            mock_openai_cls.return_value = MagicMock()
+            OpenRouterProvider(_STEP_CONFIG)
+
+        _, kwargs = mock_openai_cls.call_args
+        assert "openrouter.ai" in kwargs["base_url"]
 
 
 class TestDashScopeProvider:

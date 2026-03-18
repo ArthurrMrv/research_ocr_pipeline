@@ -4,6 +4,7 @@ from pipeline.providers.dashscope_provider import DashScopeProvider
 from pipeline.providers.gemini_provider import GeminiProvider
 from pipeline.providers.moonshot import MoonshotProvider
 from pipeline.providers.openai_provider import OpenAIProvider
+from pipeline.providers.openrouter_provider import OpenRouterProvider
 
 PROVIDERS: dict[str, type[LLMProvider]] = {
     "moonshot": MoonshotProvider,
@@ -11,6 +12,7 @@ PROVIDERS: dict[str, type[LLMProvider]] = {
     "anthropic": AnthropicProvider,
     "gemini": GeminiProvider,
     "dashscope": DashScopeProvider,
+    "openrouter": OpenRouterProvider,
 }
 
 

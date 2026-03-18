@@ -207,7 +207,7 @@ def _run_formatting_step(
     console.rule("[cyan bold]FORMATTING")
 
     errors: list[tuple[str, str]] = []
-    warnings: list[tuple[str, int]] = []
+    warnings: list[tuple[str, list[dict]]] = []
     processed = skipped = 0
     step_start = time.monotonic()
 
@@ -223,9 +223,9 @@ def _run_formatting_step(
             try:
                 result = run_formatting(doc_id, supa)
                 status = result["status"]
-                failed = result["failed_steps"]
-                if failed > 0:
-                    warnings.append((label, failed))
+                failed_details = result.get("failed_details", [])
+                if failed_details:
+                    warnings.append((label, failed_details))
             except Exception as exc:
                 status = "error"
                 errors.append((label, str(exc)))
@@ -258,10 +258,12 @@ def _run_formatting_step(
         )
 
     if warnings:
-        warn_lines = "\n".join(
-            f"  [bold]{lbl}[/bold]: {cnt} step(s) failed" for lbl, cnt in warnings
-        )
-        console.print(Panel(warn_lines, title="[yellow]Failed formatting steps", border_style="yellow"))
+        warn_parts: list[str] = []
+        for lbl, details in warnings:
+            warn_parts.append(f"  [bold]{lbl}[/bold]:")
+            for d in details:
+                warn_parts.append(f"    {d['step']}: {d['reason']}")
+        console.print(Panel("\n".join(warn_parts), title="[yellow]Failed formatting steps", border_style="yellow"))
 
 
 @click.command()
