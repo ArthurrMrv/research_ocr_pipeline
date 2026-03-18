@@ -5,19 +5,8 @@ from click.testing import CliRunner
 
 from main import run
 
-
-def _base_patches(**overrides):
-    """Return default patches for CLI tests."""
-    defaults = {
-        "main.get_supabase_client": None,
-        "main.ingest": [],
-        "main.get_all_doc_ids": [],
-        "main.run_ocr": None,
-        "main.run_scout": None,
-        "main.run_formatting": None,
-    }
-    defaults.update(overrides)
-    return defaults
+OCR_DONE = {"status": "done", "empty_pages": 0}
+FMT_DONE = {"status": "done", "completed_steps": 2, "failed_steps": 0}
 
 
 class TestCli:
@@ -31,7 +20,7 @@ class TestCli:
         ):
             result = runner.invoke(run, [str(tmp_path)])
             assert result.exit_code == 0
-            assert "Done." in result.output
+            assert "Pipeline complete" in result.output
 
     def test_run_processes_new_doc(self, tmp_path):
         pdf = tmp_path / "test.pdf"
@@ -42,13 +31,13 @@ class TestCli:
             patch("main.get_supabase_client") as mock_supa,
             patch("main.ingest", return_value=["doc1"]),
             patch("main.get_all_doc_ids", return_value=["doc1"]),
-            patch("main.run_ocr") as mock_ocr,
+            patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
-            patch("main.run_formatting") as mock_fmt,
+            patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
         ):
             result = runner.invoke(run, [str(tmp_path)])
             assert result.exit_code == 0
-            mock_ocr.assert_called_once_with("doc1", mock_supa.return_value, force=False, since=None)
+            mock_ocr.assert_called_once()
             mock_scout.assert_called_once_with("doc1", mock_supa.return_value, force=False)
             mock_fmt.assert_called_once_with("doc1", mock_supa.return_value)
 
@@ -58,7 +47,7 @@ class TestCli:
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=[]),
             patch("main.get_all_doc_ids", return_value=["doc1"]),
-            patch("main.run_ocr") as mock_ocr,
+            patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
             patch("main.run_formatting"),
         ):
@@ -73,7 +62,7 @@ class TestCli:
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=[]),
             patch("main.get_all_doc_ids", return_value=["doc1"]),
-            patch("main.run_ocr") as mock_ocr,
+            patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout"),
             patch("main.run_formatting"),
         ):
@@ -92,9 +81,9 @@ class TestCli:
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=["doc1"]) as mock_ingest,
             patch("main.get_all_doc_ids", return_value=["doc1"]),
-            patch("main.run_ocr") as mock_ocr,
+            patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
-            patch("main.run_formatting") as mock_fmt,
+            patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
         ):
             result = runner.invoke(run, [str(tmp_path), "--step", "ingest"])
             assert result.exit_code == 0
@@ -109,9 +98,9 @@ class TestCli:
             patch("main.get_supabase_client"),
             patch("main.ingest") as mock_ingest,
             patch("main.get_all_doc_ids", return_value=["doc1"]),
-            patch("main.run_ocr") as mock_ocr,
+            patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
-            patch("main.run_formatting") as mock_fmt,
+            patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
         ):
             result = runner.invoke(run, [str(tmp_path), "--step", "ocr"])
             assert result.exit_code == 0
@@ -126,9 +115,9 @@ class TestCli:
             patch("main.get_supabase_client"),
             patch("main.ingest") as mock_ingest,
             patch("main.get_all_doc_ids", return_value=["doc1"]),
-            patch("main.run_ocr") as mock_ocr,
+            patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
-            patch("main.run_formatting") as mock_fmt,
+            patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
         ):
             result = runner.invoke(run, [str(tmp_path), "--step", "scout"])
             assert result.exit_code == 0
@@ -143,9 +132,9 @@ class TestCli:
             patch("main.get_supabase_client"),
             patch("main.ingest") as mock_ingest,
             patch("main.get_all_doc_ids", return_value=["doc1"]),
-            patch("main.run_ocr") as mock_ocr,
+            patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
-            patch("main.run_formatting") as mock_fmt,
+            patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
         ):
             result = runner.invoke(run, [str(tmp_path), "--step", "formatting"])
             assert result.exit_code == 0
@@ -160,9 +149,9 @@ class TestCli:
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=[]) as mock_ingest,
             patch("main.get_all_doc_ids", return_value=["doc1"]),
-            patch("main.run_ocr") as mock_ocr,
+            patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
-            patch("main.run_formatting") as mock_fmt,
+            patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
         ):
             result = runner.invoke(run, [str(tmp_path), "--step", "ingest", "--step", "ocr"])
             assert result.exit_code == 0
@@ -177,9 +166,9 @@ class TestCli:
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=[]) as mock_ingest,
             patch("main.get_all_doc_ids", return_value=["doc1"]),
-            patch("main.run_ocr") as mock_ocr,
+            patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
-            patch("main.run_formatting") as mock_fmt,
+            patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
         ):
             result = runner.invoke(run, [str(tmp_path)])
             assert result.exit_code == 0

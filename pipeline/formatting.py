@@ -7,13 +7,14 @@ import jsonschema
 from supabase import Client
 
 from config import ACTIVE_STEPS, SCOUT_PAGE_PADDING, STEPS_DIR
-from pipeline.page_utils import extract_pages, get_total_pages
+from pipeline.page_utils import get_total_pages
 from pipeline.providers.registry import get_provider
 from pipeline.tracker import (
     append_error,
     formatting_upsert,
     get_bronze_row,
     get_ocr_chunks,
+    get_ocr_pages_for_range,
     get_scout_results,
     pipeline_get,
     pipeline_update,
@@ -21,14 +22,14 @@ from pipeline.tracker import (
 
 
 def load_step(
-    step_name: str, *, company_name: str | None = None
+    step_name: str, *, institution: str | None = None
 ) -> tuple[str | None, dict, dict]:
     """
     Load prompt text, JSON schema, and config for a step folder.
     Returns (prompt_text, schema_dict, config_dict).
 
-    If config has "per_company": true and a company_name is given,
-    looks for a company-specific prompt in prompts/{company_name}.txt
+    If config has "per_company": true and a institution is given,
+    looks for a company-specific prompt in prompts/{institution}.txt
     (case-insensitive). Returns prompt_text=None if per_company is true
     but no matching prompt file is found.
     """
@@ -38,14 +39,14 @@ def load_step(
 
     is_per_company = config.get("per_company", False)
 
-    if is_per_company and company_name:
+    if is_per_company and institution:
         prompts_dir = step_dir / "prompts"
-        prompt_text = _find_company_prompt(prompts_dir, company_name)
+        prompt_text = _find_company_prompt(prompts_dir, institution)
         if prompt_text is None:
             # Try default fallback prompt.txt
             fallback = step_dir / "prompt.txt"
             prompt_text = fallback.read_text(encoding="utf-8") if fallback.exists() else None
-    elif is_per_company and not company_name:
+    elif is_per_company and not institution:
         # per_company step but no company name — use fallback
         fallback = step_dir / "prompt.txt"
         prompt_text = fallback.read_text(encoding="utf-8") if fallback.exists() else None
@@ -55,11 +56,11 @@ def load_step(
     return prompt_text, schema, config
 
 
-def _find_company_prompt(prompts_dir, company_name: str) -> str | None:
-    """Case-insensitive lookup for prompts/{company_name}.txt."""
+def _find_company_prompt(prompts_dir, institution: str) -> str | None:
+    """Case-insensitive lookup for prompts/{institution}.txt."""
     if not prompts_dir.exists():
         return None
-    target = company_name.lower()
+    target = institution.lower()
     for path in prompts_dir.iterdir():
         if path.stem.lower() == target and path.suffix == ".txt":
             return path.read_text(encoding="utf-8")
@@ -75,14 +76,14 @@ def validate_output(result: dict, schema: dict, step_name: str) -> None:
 
 
 def run_step(
-    step_name: str, ocr_text: str, *, company_name: str | None = None
+    step_name: str, ocr_text: str, *, institution: str | None = None
 ) -> dict | None:
     """
     Load step config, dispatch to provider, validate output against schema.
     Retries once on validation failure. Returns None on second failure (soft-fail).
     Returns None if prompt_text is None (missing company-specific prompt).
     """
-    prompt_text, schema, config = load_step(step_name, company_name=company_name)
+    prompt_text, schema, config = load_step(step_name, institution=institution)
     if prompt_text is None:
         return None
     provider_name = config["provider"]
@@ -101,12 +102,13 @@ def run_step(
     return None  # unreachable, satisfies type checker
 
 
-def run_formatting(doc_id: str, supa_client: Client) -> None:
+def run_formatting(doc_id: str, supa_client: Client) -> dict:
     """
     Run all ACTIVE_STEPS for doc_id. Each step loads its own provider from config.json.
     Skips if all steps already completed. Soft-fails on per-step schema errors.
-    Fetches company_name from bronze_mapping and passes to steps.
+    Fetches institution from bronze_mapping and passes to steps.
     Multi-chunk OCR: concatenates all chunks sorted by page range.
+    Returns dict with keys: status ("skipped"|"done"), completed_steps, failed_steps.
     """
     pipeline_row = pipeline_get(supa_client, doc_id)
     if pipeline_row is None:
@@ -117,7 +119,7 @@ def run_formatting(doc_id: str, supa_client: Client) -> None:
         and pipeline_row.get("formatting_nb", 0) == len(ACTIVE_STEPS)
     )
     if already_done:
-        return
+        return {"status": "skipped", "completed_steps": 0, "failed_steps": 0}
 
     # Fetch OCR chunks and concatenate
     ocr_chunks = get_ocr_chunks(supa_client, doc_id)
@@ -125,15 +127,16 @@ def run_formatting(doc_id: str, supa_client: Client) -> None:
         raise ValueError(f"No OCR results for doc_id={doc_id}; run OCR first")
     ocr_text = "\n\n".join(chunk["content"] for chunk in ocr_chunks)
 
-    # Fetch company_name from bronze_mapping
+    # Fetch institution from bronze_mapping
     bronze_row = get_bronze_row(supa_client, doc_id)
-    company_name = bronze_row.get("company_name") if bronze_row else None
+    institution = bronze_row.get("institution") if bronze_row else None
 
     # Fetch scout results (empty dict means scout hasn't run — fall back to full text)
     scout_results = get_scout_results(supa_client, doc_id)
     total_pages = get_total_pages(ocr_text)
 
     completed_steps = 0
+    failed_steps = 0
     for step_name in ACTIVE_STEPS:
         if scout_results:
             if step_name not in scout_results:
@@ -142,18 +145,24 @@ def run_formatting(doc_id: str, supa_client: Client) -> None:
                     doc_id,
                     f"Scout has no page range for step [{step_name}]; skipping",
                 )
+                failed_steps += 1
                 continue
             scout_range = scout_results[step_name]
             start = max(1, scout_range["start_page"] - SCOUT_PAGE_PADDING)
             end = min(total_pages or scout_range["end_page"], scout_range["end_page"] + SCOUT_PAGE_PADDING)
-            step_ocr_text = extract_pages(ocr_text, start, end)
+            page_rows = get_ocr_pages_for_range(supa_client, doc_id, start, end)
+            if page_rows:
+                step_ocr_text = "\n\n".join(r["content"] for r in page_rows)
+            else:
+                step_ocr_text = ocr_text  # fallback: full text
         else:
             step_ocr_text = ocr_text
 
         try:
-            result = run_step(step_name, step_ocr_text, company_name=company_name)
+            result = run_step(step_name, step_ocr_text, institution=institution)
         except Exception as exc:
             append_error(supa_client, doc_id, f"Formatting error [{step_name}]: {exc}")
+            failed_steps += 1
             continue
 
         if result is None:
@@ -162,9 +171,10 @@ def run_formatting(doc_id: str, supa_client: Client) -> None:
                 doc_id,
                 f"Formatting step [{step_name}]: output failed schema validation after retry",
             )
+            failed_steps += 1
             continue
 
-        _, _, config = load_step(step_name, company_name=company_name)
+        _, _, config = load_step(step_name, institution=institution)
         formatting_upsert(
             supa_client,
             {
@@ -184,3 +194,8 @@ def run_formatting(doc_id: str, supa_client: Client) -> None:
             "formatting_nb": completed_steps,
         },
     )
+    return {
+        "status": "done",
+        "completed_steps": completed_steps,
+        "failed_steps": failed_steps,
+    }

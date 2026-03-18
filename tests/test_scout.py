@@ -53,7 +53,7 @@ class TestRunScout:
 
     def test_runs_scout_and_upserts_results(self):
         pipeline_row = self._make_pipeline_row()
-        ocr_chunks = [{"content": "--- Page 1 ---\nsome text", "pages": "1-75"}]
+        ocr_chunks = [{"content": "--- Page 1 ---\nsome text", "page_number": 1}]
         client = _make_client(pipeline_row, ocr_chunks)
 
         scout_output = {
@@ -78,7 +78,7 @@ class TestRunScout:
 
     def test_skips_steps_not_in_active_steps(self):
         pipeline_row = self._make_pipeline_row()
-        ocr_chunks = [{"content": "--- Page 1 ---\ntext", "pages": "1-10"}]
+        ocr_chunks = [{"content": "--- Page 1 ---\ntext", "page_number": 1}]
         client = _make_client(pipeline_row, ocr_chunks)
 
         scout_output = {
@@ -102,7 +102,7 @@ class TestRunScout:
 
     def test_appends_error_when_run_step_returns_none(self):
         pipeline_row = self._make_pipeline_row()
-        ocr_chunks = [{"content": "--- Page 1 ---\ntext", "pages": "1-10"}]
+        ocr_chunks = [{"content": "--- Page 1 ---\ntext", "page_number": 1}]
         client = _make_client(pipeline_row, ocr_chunks)
 
         with (
@@ -116,7 +116,7 @@ class TestRunScout:
 
     def test_force_reruns_even_if_scouted(self):
         pipeline_row = self._make_pipeline_row(last_scout="2024-01-01T00:00:00+00:00")
-        ocr_chunks = [{"content": "--- Page 1 ---\ntext", "pages": "1-10"}]
+        ocr_chunks = [{"content": "--- Page 1 ---\ntext", "page_number": 1}]
         client = _make_client(pipeline_row, ocr_chunks)
 
         scout_output = {"extract_model_name": {"start_page": 1, "end_page": 2}}

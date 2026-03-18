@@ -29,13 +29,13 @@ def ingest(pdf_paths: list[str], client: Client) -> list[str]:
             continue
 
         doc_name = os.path.basename(path)
-        company_name, report_date = parse_filename(doc_name)
+        institution, report_date = parse_filename(doc_name)
         bronze_insert(
             client,
             doc_id,
             os.path.abspath(path),
             doc_name,
-            company_name=company_name,
+            institution=institution,
             report_date=report_date,
         )
         pipeline_insert(client, doc_id)

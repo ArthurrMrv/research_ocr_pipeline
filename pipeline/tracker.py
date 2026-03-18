@@ -1,4 +1,3 @@
-import json
 import os
 from datetime import datetime, timezone
 
@@ -17,13 +16,13 @@ def bronze_insert(
     file_path: str,
     doc_name: str,
     *,
-    company_name: str | None = None,
+    institution: str | None = None,
     report_date: str | None = None,
 ) -> None:
     """Insert a new bronze record. Raises on conflict (duplicate doc_id)."""
     row: dict = {"doc_id": doc_id, "file_path": file_path, "doc_name": doc_name}
-    if company_name is not None:
-        row["company_name"] = company_name
+    if institution is not None:
+        row["institution"] = institution
     if report_date is not None:
         row["report_date"] = report_date
     client.table("bronze_mapping").insert(row).execute()
@@ -66,7 +65,7 @@ def append_error(client: Client, doc_id: str, error_msg: str) -> None:
     new_errors = list(current_errors) + [
         {"message": error_msg, "ts": datetime.now(timezone.utc).isoformat()}
     ]
-    pipeline_update(client, doc_id, {"error": json.dumps(new_errors)})
+    pipeline_update(client, doc_id, {"error": new_errors})
 
 
 def get_all_doc_ids(client: Client) -> list[str]:
@@ -85,7 +84,7 @@ def get_bronze_row(client: Client, doc_id: str) -> dict | None:
 
 
 def get_ocr_chunks(client: Client, doc_id: str) -> list[dict]:
-    """Return all ocr_results rows for doc_id, sorted by pages field."""
+    """Return all ocr_results rows for doc_id, sorted by page_number."""
     result = (
         client.table("ocr_results")
         .select("*")
@@ -93,7 +92,23 @@ def get_ocr_chunks(client: Client, doc_id: str) -> list[dict]:
         .execute()
     )
     rows = result.data or []
-    return sorted(rows, key=lambda r: r.get("pages", "all"))
+    return sorted(rows, key=lambda r: r.get("page_number") or 0)
+
+
+def get_ocr_pages_for_range(
+    client: Client, doc_id: str, start: int, end: int
+) -> list[dict]:
+    """Return ocr_results rows where page_number BETWEEN start AND end, sorted."""
+    result = (
+        client.table("ocr_results")
+        .select("*")
+        .eq("doc_id", doc_id)
+        .gte("page_number", start)
+        .lte("page_number", end)
+        .execute()
+    )
+    rows = result.data or []
+    return sorted(rows, key=lambda r: r.get("page_number", 0))
 
 
 def delete_ocr_rows(client: Client, doc_id: str) -> None:

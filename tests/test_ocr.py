@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from pipeline.ocr import _after_date, make_page_range, pdf_to_images, run_ocr
+from pipeline.ocr import _after_date, pdf_to_images, run_ocr
+from pipeline.ocr_providers.zai_provider import _split_by_pages
 
 
 class TestAfterDate:
@@ -29,15 +30,63 @@ class TestAfterDate:
         assert _after_date(row, "2024-01-01") is False
 
 
-class TestMakePageRange:
-    def test_single_batch(self):
-        assert make_page_range(1, 75) == "1-75"
+class TestSplitByPages:
+    def test_no_markers_returns_single_page(self):
+        md = "Some plain text without markers"
+        result = _split_by_pages(md)
+        assert result == [md]
 
-    def test_second_batch(self):
-        assert make_page_range(76, 150) == "76-150"
+    def test_single_page_marker(self):
+        md = "![](page=0,bbox=0,0,100,100) Page zero content"
+        result = _split_by_pages(md)
+        assert len(result) == 1
+        assert "Page zero content" in result[0]
 
-    def test_partial_batch(self):
-        assert make_page_range(151, 200) == "151-200"
+    def test_two_pages(self):
+        md = (
+            "![](page=0,bbox=0,0,100,100) First page stuff\n"
+            "![](page=1,bbox=0,0,100,100) Second page stuff"
+        )
+        result = _split_by_pages(md)
+        assert len(result) == 2
+        assert "First page" in result[0]
+        assert "Second page" in result[1]
+
+    def test_preamble_goes_to_page_zero(self):
+        md = (
+            "Preamble text\n"
+            "![](page=0,bbox=0,0,100,100) Page zero\n"
+            "![](page=1,bbox=0,0,100,100) Page one"
+        )
+        result = _split_by_pages(md)
+        assert len(result) == 2
+        assert "Preamble text" in result[0]
+        assert "Page zero" in result[0]
+        assert "Page one" in result[1]
+
+    def test_multiple_markers_same_page(self):
+        md = (
+            "![](page=0,bbox=0,0,50,50) First block\n"
+            "![](page=0,bbox=50,0,100,50) Second block\n"
+            "![](page=1,bbox=0,0,100,100) Page one"
+        )
+        result = _split_by_pages(md)
+        assert len(result) == 2
+        assert "First block" in result[0]
+        assert "Second block" in result[0]
+        assert "Page one" in result[1]
+
+    def test_three_pages(self):
+        md = (
+            "![](page=0,bbox=0,0,100,100) P0\n"
+            "![](page=1,bbox=0,0,100,100) P1\n"
+            "![](page=2,bbox=0,0,100,100) P2"
+        )
+        result = _split_by_pages(md)
+        assert len(result) == 3
+        assert "P0" in result[0]
+        assert "P1" in result[1]
+        assert "P2" in result[2]
 
 
 class TestPdfToImages:
@@ -82,8 +131,9 @@ class TestRunOcr:
         client = self._make_client(pipeline_row)
 
         with patch("pipeline.ocr.get_ocr_provider") as mock_provider:
-            run_ocr("doc1", client, force=False, since=None)
+            result = run_ocr("doc1", client, force=False, since=None)
             mock_provider.assert_not_called()
+            assert result == {"status": "skipped", "empty_pages": 0}
 
     def test_raises_if_no_pipeline_row(self):
         client = self._make_client(pipeline_row=None)
@@ -96,6 +146,7 @@ class TestRunOcr:
         client = self._make_client(pipeline_row, bronze_row)
 
         mock_provider = MagicMock()
+        mock_provider.ocr_document.side_effect = NotImplementedError
         mock_provider.ocr_pages.return_value = "page text"
 
         with patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider):
@@ -114,6 +165,7 @@ class TestRunOcr:
         client = self._make_client(pipeline_row, bronze_row)
 
         mock_provider = MagicMock()
+        mock_provider.ocr_document.side_effect = NotImplementedError
         mock_provider.ocr_pages.return_value = "page text"
 
         with patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider):
@@ -130,6 +182,7 @@ class TestRunOcr:
         # Create 100 fake images to simulate a long document
         fake_images = [Image.new("RGB", (10, 10)) for _ in range(100)]
         mock_provider = MagicMock()
+        mock_provider.ocr_document.side_effect = NotImplementedError
         mock_provider.ocr_pages.return_value = "chunk text"
 
         with (
@@ -154,6 +207,7 @@ class TestRunOcr:
 
         fake_images = [Image.new("RGB", (10, 10)) for _ in range(100)]
         mock_provider = MagicMock()
+        mock_provider.ocr_document.side_effect = NotImplementedError
         mock_provider.ocr_pages.return_value = "chunk text"
 
         with (
@@ -168,12 +222,58 @@ class TestRunOcr:
         assert first_call_kwargs["page_offset"] == 0
         assert second_call_kwargs["page_offset"] == 75
 
+    def test_ocr_document_fast_path_stores_per_page(self, fixture_pdf):
+        """When ocr_document returns multiple pages, each gets its own row."""
+        pipeline_row = self._make_pipeline_row(last_ocr=None)
+        bronze_row = self._make_bronze_row(file_path=fixture_pdf)
+        client = self._make_client(pipeline_row, bronze_row)
+
+        mock_provider = MagicMock()
+        mock_provider.ocr_document.return_value = ["Page 0 content", "Page 1 content", "Page 2 content"]
+
+        with (
+            patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider),
+            patch("pipeline.ocr.ZAI_MAX_PAGES", 100),
+            patch("pipeline.ocr.silver_upsert") as mock_upsert,
+        ):
+            result = run_ocr("doc1", client)
+
+        # Should store 3 rows, one per page
+        assert mock_upsert.call_count == 3
+        page_numbers = [call[0][2]["page_number"] for call in mock_upsert.call_args_list]
+        assert page_numbers == [1, 2, 3]
+        assert result["status"] == "done"
+        assert result["empty_pages"] == 0
+
+    def test_empty_pages_flagged_in_result(self, fixture_pdf):
+        """Empty OCR pages are counted and logged as errors."""
+        pipeline_row = self._make_pipeline_row(last_ocr=None)
+        bronze_row = self._make_bronze_row(file_path=fixture_pdf)
+        client = self._make_client(pipeline_row, bronze_row)
+
+        mock_provider = MagicMock()
+        mock_provider.ocr_document.return_value = ["Content", "", "  ", "More content"]
+
+        with (
+            patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider),
+            patch("pipeline.ocr.ZAI_MAX_PAGES", 100),
+            patch("pipeline.ocr.silver_upsert"),
+            patch("pipeline.ocr.append_error") as mock_err,
+        ):
+            result = run_ocr("doc1", client)
+
+        assert result["status"] == "done"
+        assert result["empty_pages"] == 2
+        mock_err.assert_called_once()
+        assert "2 empty page(s)" in mock_err.call_args[0][2]
+
     def test_deletes_existing_rows_before_reocr(self, fixture_pdf):
         pipeline_row = self._make_pipeline_row(last_ocr=None)
         bronze_row = self._make_bronze_row(file_path=fixture_pdf)
         client = self._make_client(pipeline_row, bronze_row)
 
         mock_provider = MagicMock()
+        mock_provider.ocr_document.side_effect = NotImplementedError
         mock_provider.ocr_pages.return_value = "page text"
 
         with (

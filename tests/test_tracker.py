@@ -1,6 +1,4 @@
-import json
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -65,14 +63,14 @@ class TestBronzeInsert:
         client = _make_client()
         bronze_insert(
             client, "doc1", "/path/file.pdf", "Apple_2024-01-01.pdf",
-            company_name="Apple", report_date="2024-01-01",
+            institution="Apple", report_date="2024-01-01",
         )
         client.table().insert.assert_called_with(
             {
                 "doc_id": "doc1",
                 "file_path": "/path/file.pdf",
                 "doc_name": "Apple_2024-01-01.pdf",
-                "company_name": "Apple",
+                "institution": "Apple",
                 "report_date": "2024-01-01",
             }
         )
@@ -81,7 +79,7 @@ class TestBronzeInsert:
         client = _make_client()
         bronze_insert(
             client, "doc1", "/path/file.pdf", "file.pdf",
-            company_name=None, report_date=None,
+            institution=None, report_date=None,
         )
         client.table().insert.assert_called_with(
             {"doc_id": "doc1", "file_path": "/path/file.pdf", "doc_name": "file.pdf"}
@@ -148,7 +146,8 @@ class TestAppendError:
         client = _make_client(data=[row])
         append_error(client, "doc1", "Something failed")
         update_call = client.table().update.call_args
-        updated_error = json.loads(update_call[0][0]["error"])
+        updated_error = update_call[0][0]["error"]
+        assert isinstance(updated_error, list)
         assert len(updated_error) == 1
         assert updated_error[0]["message"] == "Something failed"
 
@@ -158,7 +157,8 @@ class TestAppendError:
         client = _make_client(data=[row])
         append_error(client, "doc1", "new error")
         update_call = client.table().update.call_args
-        updated_error = json.loads(update_call[0][0]["error"])
+        updated_error = update_call[0][0]["error"]
+        assert isinstance(updated_error, list)
         assert len(updated_error) == 2
 
     def test_no_op_when_doc_not_found(self):
@@ -182,7 +182,7 @@ class TestGetAllDocIds:
 
 class TestGetBronzeRow:
     def test_returns_row_when_found(self):
-        row = {"doc_id": "doc1", "file_path": "/path.pdf", "company_name": "Apple"}
+        row = {"doc_id": "doc1", "file_path": "/path.pdf", "institution": "Apple"}
         client = _make_client(data=[row])
         result = get_bronze_row(client, "doc1")
         assert result == row
@@ -196,13 +196,13 @@ class TestGetBronzeRow:
 class TestGetOcrChunks:
     def test_returns_sorted_chunks(self):
         data = [
-            {"doc_id": "doc1", "pages": "76-150", "content": "chunk2"},
-            {"doc_id": "doc1", "pages": "1-75", "content": "chunk1"},
+            {"doc_id": "doc1", "page_number": 76, "content": "chunk2"},
+            {"doc_id": "doc1", "page_number": 1, "content": "chunk1"},
         ]
         client = _make_client(data=data)
         result = get_ocr_chunks(client, "doc1")
-        assert result[0]["pages"] == "1-75"
-        assert result[1]["pages"] == "76-150"
+        assert result[0]["page_number"] == 1
+        assert result[1]["page_number"] == 76
 
     def test_returns_empty_list_when_none(self):
         client = _make_client(data=[])

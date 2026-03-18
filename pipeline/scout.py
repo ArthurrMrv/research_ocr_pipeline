@@ -20,11 +20,12 @@ def run_scout(
     client: Client,
     *,
     force: bool = False,
-) -> None:
+) -> str:
     """
     Run the scout step for doc_id: identify relevant page ranges per active step.
     Stores raw page ranges in scout_results table.
     Skips if already scouted unless force=True.
+    Returns status: "skipped", "done", or "error".
     """
     pipeline_row = pipeline_get(client, doc_id)
     if pipeline_row is None:
@@ -32,7 +33,7 @@ def run_scout(
 
     already_done = pipeline_row.get("last_scout") is not None
     if already_done and not force:
-        return
+        return "skipped"
 
     ocr_chunks = get_ocr_chunks(client, doc_id)
     if not ocr_chunks:
@@ -71,3 +72,4 @@ def run_scout(
         doc_id,
         {"last_scout": datetime.now(timezone.utc).isoformat()},
     )
+    return "done"

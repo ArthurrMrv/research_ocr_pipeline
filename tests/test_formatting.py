@@ -42,7 +42,7 @@ class TestLoadStep:
             with pytest.raises(FileNotFoundError):
                 load_step("nonexistent_step")
 
-    def test_loads_company_specific_prompt(self, tmp_path):
+    def test_loads_institution_specific_prompt(self, tmp_path):
         step_dir = _make_step_dir(
             tmp_path, "my_step",
             config={"provider": "moonshot", "model": "kimi-k2.5", "per_company": True},
@@ -52,10 +52,10 @@ class TestLoadStep:
         (prompts_dir / "Apple.txt").write_text("Apple-specific prompt")
 
         with patch("pipeline.formatting.STEPS_DIR", tmp_path):
-            prompt, schema, config = load_step("my_step", company_name="Apple")
+            prompt, schema, config = load_step("my_step", institution="Apple")
         assert prompt == "Apple-specific prompt"
 
-    def test_company_prompt_case_insensitive(self, tmp_path):
+    def test_institution_prompt_case_insensitive(self, tmp_path):
         step_dir = _make_step_dir(
             tmp_path, "my_step",
             config={"provider": "moonshot", "model": "kimi-k2.5", "per_company": True},
@@ -65,7 +65,7 @@ class TestLoadStep:
         (prompts_dir / "Apple.txt").write_text("Apple prompt")
 
         with patch("pipeline.formatting.STEPS_DIR", tmp_path):
-            prompt, _, _ = load_step("my_step", company_name="apple")
+            prompt, _, _ = load_step("my_step", institution="apple")
         assert prompt == "Apple prompt"
 
     def test_per_company_missing_prompt_uses_fallback(self, tmp_path):
@@ -75,17 +75,17 @@ class TestLoadStep:
             prompt="fallback prompt",
         )
         with patch("pipeline.formatting.STEPS_DIR", tmp_path):
-            prompt, _, _ = load_step("my_step", company_name="Unknown")
+            prompt, _, _ = load_step("my_step", institution="Unknown")
         assert prompt == "fallback prompt"
 
-    def test_per_company_no_company_name_uses_fallback(self, tmp_path):
+    def test_per_company_no_institution_uses_fallback(self, tmp_path):
         _make_step_dir(
             tmp_path, "my_step",
             config={"provider": "moonshot", "model": "kimi-k2.5", "per_company": True},
             prompt="fallback prompt",
         )
         with patch("pipeline.formatting.STEPS_DIR", tmp_path):
-            prompt, _, _ = load_step("my_step", company_name=None)
+            prompt, _, _ = load_step("my_step", institution=None)
         assert prompt == "fallback prompt"
 
 
@@ -164,11 +164,11 @@ class TestRunStep:
         (tmp_path / "step1" / "prompt.txt").unlink()
 
         with patch("pipeline.formatting.STEPS_DIR", tmp_path):
-            result = run_step("step1", "ocr text", company_name="Unknown")
+            result = run_step("step1", "ocr text", institution="Unknown")
 
         assert result is None
 
-    def test_passes_company_name_to_load_step(self, tmp_path):
+    def test_passes_institution_to_load_step(self, tmp_path):
         _make_step_dir(tmp_path, "step1")
         mock_provider = MagicMock()
         mock_provider.call.return_value = {"result": "ok"}
@@ -177,7 +177,7 @@ class TestRunStep:
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.get_provider", return_value=mock_provider),
         ):
-            result = run_step("step1", "ocr text", company_name="Apple")
+            result = run_step("step1", "ocr text", institution="Apple")
 
         assert result == {"result": "ok"}
 
@@ -204,6 +204,8 @@ class TestRunFormatting:
             chain.update.return_value = chain
             chain.upsert.return_value = chain
             chain.eq.return_value = chain
+            chain.gte.return_value = chain
+            chain.lte.return_value = chain
             return chain
 
         client.table.side_effect = table_side_effect
@@ -218,8 +220,9 @@ class TestRunFormatting:
         client = self._make_client(pipeline_row)
 
         with patch("pipeline.formatting.run_step") as mock_step:
-            run_formatting("doc1", client)
+            result = run_formatting("doc1", client)
             mock_step.assert_not_called()
+            assert result["status"] == "skipped"
 
     def test_raises_if_no_pipeline_row(self):
         client = self._make_client(pipeline_row=None)
@@ -235,8 +238,8 @@ class TestRunFormatting:
     def test_runs_all_steps_no_scout(self, tmp_path):
         """When no scout results, all steps run with full OCR text."""
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
-        ocr_chunks = [{"content": "chunk1 text", "pages": "1-75"}]
-        bronze_row = {"doc_id": "doc1", "company_name": None}
+        ocr_chunks = [{"page_number": 1, "content": "chunk1 text"}]
+        bronze_row = {"doc_id": "doc1", "institution": None}
         client = self._make_client(pipeline_row, ocr_chunks, bronze_row, scout_rows=[])
 
         step_result = {"result": "ok"}
@@ -246,14 +249,17 @@ class TestRunFormatting:
             patch("pipeline.formatting.run_step", return_value=step_result) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
         ):
-            run_formatting("doc1", client)
+            result = run_formatting("doc1", client)
 
         assert mock_step.call_count == 2
+        assert result["status"] == "done"
+        assert result["completed_steps"] == 2
+        assert result["failed_steps"] == 0
 
     def test_soft_fails_on_schema_error(self, tmp_path):
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
-        ocr_chunks = [{"content": "sample ocr text", "pages": "1-75"}]
-        bronze_row = {"doc_id": "doc1", "company_name": None}
+        ocr_chunks = [{"page_number": 1, "content": "sample ocr text"}]
+        bronze_row = {"doc_id": "doc1", "institution": None}
         client = self._make_client(pipeline_row, ocr_chunks, bronze_row, scout_rows=[])
 
         with (
@@ -262,17 +268,20 @@ class TestRunFormatting:
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.append_error") as mock_err,
         ):
-            run_formatting("doc1", client)
+            result = run_formatting("doc1", client)
 
         assert mock_err.call_count == 2
+        assert result["status"] == "done"
+        assert result["completed_steps"] == 0
+        assert result["failed_steps"] == 2
 
     def test_concatenates_multi_chunk_ocr_no_scout(self, tmp_path):
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
         ocr_chunks = [
-            {"content": "--- Page 1 ---\nchunk1", "pages": "1-75"},
-            {"content": "--- Page 76 ---\nchunk2", "pages": "76-100"},
+            {"page_number": 1, "content": "--- Page 1 ---\nchunk1"},
+            {"page_number": 76, "content": "--- Page 76 ---\nchunk2"},
         ]
-        bronze_row = {"doc_id": "doc1", "company_name": None}
+        bronze_row = {"doc_id": "doc1", "institution": None}
         client = self._make_client(pipeline_row, ocr_chunks, bronze_row, scout_rows=[])
 
         step_result = {"result": "ok"}
@@ -289,10 +298,10 @@ class TestRunFormatting:
         assert "chunk1" in ocr_text_arg
         assert "chunk2" in ocr_text_arg
 
-    def test_passes_company_name_to_run_step(self, tmp_path):
+    def test_passes_institution_to_run_step(self, tmp_path):
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
-        ocr_chunks = [{"content": "--- Page 1 ---\ntext", "pages": "1-10"}]
-        bronze_row = {"doc_id": "doc1", "company_name": "Apple"}
+        ocr_chunks = [{"page_number": 1, "content": "--- Page 1 ---\ntext"}]
+        bronze_row = {"doc_id": "doc1", "institution": "Apple"}
         client = self._make_client(pipeline_row, ocr_chunks, bronze_row, scout_rows=[])
 
         step_result = {"result": "ok"}
@@ -304,29 +313,24 @@ class TestRunFormatting:
         ):
             run_formatting("doc1", client)
 
-        # Check company_name kwarg was passed
-        assert mock_step.call_args_list[0][1]["company_name"] == "Apple"
+        # Check institution kwarg was passed
+        assert mock_step.call_args_list[0][1]["institution"] == "Apple"
 
     def test_uses_scout_filtered_pages(self, tmp_path):
-        """When scout results exist, each step receives only its targeted pages."""
+        """When scout results exist, each step calls get_ocr_pages_for_range with correct range."""
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
-        ocr_chunks = [
-            {
-                "content": (
-                    "--- Page 1 ---\nIntro\n\n"
-                    "--- Page 2 ---\nModel specs\n\n"
-                    "--- Page 3 ---\nResults table\n\n"
-                    "--- Page 4 ---\nConclusion"
-                ),
-                "pages": "1-4",
-            }
+        page_rows = [
+            {"page_number": 1, "content": "--- Page 1 ---\nIntro"},
+            {"page_number": 2, "content": "--- Page 2 ---\nModel specs"},
+            {"page_number": 3, "content": "--- Page 3 ---\nResults table"},
+            {"page_number": 4, "content": "--- Page 4 ---\nConclusion"},
         ]
-        bronze_row = {"doc_id": "doc1", "company_name": None}
+        bronze_row = {"doc_id": "doc1", "institution": None}
         scout_rows = [
             {"step_name": "extract_model_name", "start_page": 2, "end_page": 2, "scout_model": "gemini-2.0-flash-lite"},
             {"step_name": "extract_table", "start_page": 3, "end_page": 3, "scout_model": "gemini-2.0-flash-lite"},
         ]
-        client = self._make_client(pipeline_row, ocr_chunks, bronze_row, scout_rows)
+        client = self._make_client(pipeline_row, page_rows, bronze_row, scout_rows)
 
         step_result = {"result": "ok"}
         received_texts = []
@@ -335,12 +339,16 @@ class TestRunFormatting:
             received_texts.append((step_name, ocr_text))
             return step_result
 
+        def mock_get_pages(c, doc_id, start, end):
+            return [r for r in page_rows if start <= r["page_number"] <= end]
+
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", side_effect=capture_run_step),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
             patch("pipeline.formatting.SCOUT_PAGE_PADDING", 0),
+            patch("pipeline.formatting.get_ocr_pages_for_range", side_effect=mock_get_pages),
         ):
             run_formatting("doc1", client)
 
@@ -358,8 +366,8 @@ class TestRunFormatting:
     def test_skips_step_when_scout_has_no_range(self, tmp_path):
         """When scout ran but a step has no range, append error and skip that step."""
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
-        ocr_chunks = [{"content": "--- Page 1 ---\nsome text", "pages": "1-5"}]
-        bronze_row = {"doc_id": "doc1", "company_name": None}
+        ocr_chunks = [{"page_number": 1, "content": "--- Page 1 ---\nsome text"}]
+        bronze_row = {"doc_id": "doc1", "institution": None}
         # Scout has result for extract_model_name but NOT for extract_table
         scout_rows = [
             {"step_name": "extract_model_name", "start_page": 1, "end_page": 2, "scout_model": "gemini-2.0-flash-lite"},
@@ -374,6 +382,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
             patch("pipeline.formatting.SCOUT_PAGE_PADDING", 0),
+            patch("pipeline.formatting.get_ocr_pages_for_range", return_value=ocr_chunks),
             patch("pipeline.formatting.append_error") as mock_err,
         ):
             run_formatting("doc1", client)
