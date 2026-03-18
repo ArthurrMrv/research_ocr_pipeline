@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from glob import glob
 
@@ -267,7 +268,7 @@ def _run_formatting_step(
 
 
 @click.command()
-@click.argument("pdf_dir", type=click.Path(exists=True))
+@click.argument("pdf_path", type=click.Path(exists=True))
 @click.option("--parse-all", is_flag=True, help="Re-process all documents.")
 @click.option(
     "--parse-date",
@@ -281,23 +282,15 @@ def _run_formatting_step(
     multiple=True,
     help="Run only specific pipeline step(s). Omit to run all.",
 )
-@click.option(
-    "--doc",
-    "doc_filter",
-    type=str,
-    default=None,
-    help="Filter to a single document by partial name match (case-insensitive).",
-)
 @click.option("--debug", is_flag=True, help="Print full LLM responses and per-page OCR status.")
 def run(
-    pdf_dir: str,
+    pdf_path: str,
     parse_all: bool,
     parse_date: str | None,
     step: tuple[str, ...],
-    doc_filter: str | None,
     debug: bool,
 ) -> None:
-    """Run the ingestion pipeline on all PDFs in PDF_DIR."""
+    """Run the ingestion pipeline on PDF_PATH (a single PDF file or a directory of PDFs)."""
     load_dotenv()
     pipeline_start = time.monotonic()
     supa = get_supabase_client()
@@ -308,9 +301,17 @@ def run(
 
     steps_to_run = set(step) if step else set(ALL_STEPS)
 
+    # Resolve single file vs directory
+    if os.path.isfile(pdf_path):
+        pdfs = [pdf_path]
+        single_file_basename: str | None = os.path.basename(pdf_path)
+    else:
+        pdfs = glob(f"{pdf_path}/*.pdf")
+        single_file_basename = None
+
     # Banner
     console.rule("[cyan bold]Ingestion Pipeline")
-    console.print(f"  [dim]PDF directory[/dim] : {pdf_dir}")
+    console.print(f"  [dim]PDF path     [/dim] : {pdf_path}")
     console.print(f"  [dim]Steps        [/dim] : {', '.join(s for s in ALL_STEPS if s in steps_to_run)}")
     if debug:
         console.print("  [dim]Debug mode  [/dim] : [yellow bold]ON[/yellow bold]")
@@ -325,8 +326,7 @@ def run(
     if "ingest" in steps_to_run:
         console.rule("[cyan bold]INGEST")
         t0 = time.monotonic()
-        pdfs = glob(f"{pdf_dir}/*.pdf")
-        console.print(f"  Found [bold]{len(pdfs)}[/bold] PDF files in directory")
+        console.print(f"  Found [bold]{len(pdfs)}[/bold] PDF file(s)")
         new_ids = ingest(pdfs, supa)
         elapsed = time.monotonic() - t0
         console.print(
@@ -343,12 +343,11 @@ def run(
         for did in all_ids:
             doc_labels[did] = _doc_label(supa, did)
 
-    if doc_filter:
-        all_ids = [did for did in all_ids if doc_filter.lower() in doc_labels[did].lower()]
+    if single_file_basename:
+        all_ids = [did for did in all_ids if doc_labels[did] == single_file_basename]
         if not all_ids:
-            console.print(f"[red]No documents matched '--doc {doc_filter}'[/red]")
+            console.print(f"[red]No document registered for '{single_file_basename}'[/red]")
             return
-        console.print(f"  [dim]Doc filter  [/dim] : {doc_filter} → {len(all_ids)} match(es)")
 
     console.print(f"  Total documents: [bold]{len(all_ids)}[/bold]")
 

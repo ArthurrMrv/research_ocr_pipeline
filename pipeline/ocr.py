@@ -16,6 +16,7 @@ from pipeline.ocr_providers.registry import get_ocr_provider
 from pipeline.tracker import (
     append_error,
     delete_ocr_rows,
+    get_ocr_chunks,
     pipeline_get,
     pipeline_update,
     silver_upsert,
@@ -38,6 +39,12 @@ def pdf_to_images(pdf_path: str) -> list[Image.Image]:
 
 
 _LEADING_IMAGE_RE = re.compile(r"^(!\[.*?\]\(.*?\))\s*", re.DOTALL)
+_PAGE_MARKER_RE = re.compile(r"^---\s*Page\s+\d+\s*---\s*$", re.MULTILINE)
+
+
+def _is_empty_page_content(content: str) -> bool:
+    """Return True if a stored OCR row contains no real text (only a page marker)."""
+    return not _PAGE_MARKER_RE.sub("", content).strip()
 
 
 def _add_page_marker(content: str, page_num: int) -> str:
@@ -72,6 +79,51 @@ def _after_date(row: dict, since: str | None) -> bool:
     return added_dt >= since_dt
 
 
+def _reocr_pages(
+    doc_id: str,
+    client: Client,
+    page_nums: list[int],
+    progress_callback: Callable[[int, int], None] | None,
+) -> dict:
+    """Re-OCR specific pages of an already-processed document and upsert results."""
+    bronze_row = (
+        client.table("bronze_mapping").select("file_path").eq("doc_id", doc_id).execute()
+    )
+    file_path = bronze_row.data[0]["file_path"]
+    provider = get_ocr_provider(OCR_PROVIDER)
+
+    newly_empty: list[int] = []
+    for i, page_num in enumerate(page_nums):
+        chunk = extract_sub_pdf_bytes(file_path, page_num - 1, page_num)
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
+            tmp.write(chunk)
+            tmp.flush()
+            try:
+                pages = provider.ocr_document(tmp.name)
+                raw_content = pages[0] if pages else ""
+            except NotImplementedError:
+                continue
+
+        if not raw_content.strip():
+            newly_empty.append(page_num)
+        debug_logger.print_ocr_page(page_num, empty=not raw_content.strip())
+        content = _add_page_marker(raw_content, page_num)
+        silver_upsert(
+            client,
+            "ocr_results",
+            {
+                "doc_id": doc_id,
+                "page_number": page_num,
+                "ocr_model": OCR_MODEL_ID,
+                "content": content,
+            },
+        )
+        if progress_callback:
+            progress_callback(i + 1, len(page_nums))
+
+    return {"status": "done", "empty_pages": len(newly_empty)}
+
+
 def run_ocr(
     doc_id: str,
     client: Client,
@@ -85,6 +137,7 @@ def run_ocr(
     Chunks pages into batches of MAX_PAGES_PER_BATCH.
     Each chunk is stored as a separate row with a 'pages' column.
     Skips if already OCR'd unless force=True or since date matches.
+    If already done but has empty pages, re-OCRs only those pages.
     Returns dict with 'status' ("skipped"|"done") and 'empty_pages' count.
     """
     pipeline_row = pipeline_get(client, doc_id)
@@ -93,7 +146,13 @@ def run_ocr(
 
     already_done = pipeline_row.get("last_ocr") is not None
     if already_done and not force and not _after_date(pipeline_row, since):
-        return {"status": "skipped", "empty_pages": 0}
+        existing_rows = get_ocr_chunks(client, doc_id)
+        empty_page_nums = [
+            r["page_number"] for r in existing_rows if _is_empty_page_content(r["content"])
+        ]
+        if not empty_page_nums:
+            return {"status": "skipped", "empty_pages": 0}
+        return _reocr_pages(doc_id, client, empty_page_nums, progress_callback)
 
     # Fetch file path from bronze_mapping
     bronze_row = (
