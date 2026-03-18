@@ -7,6 +7,8 @@ import jsonschema
 from supabase import Client
 
 from config import ACTIVE_STEPS, SCOUT_PAGE_PADDING, STEPS_DIR
+
+MAX_FORMATTING_ATTEMPTS = 3
 from pipeline.page_utils import get_total_pages
 from pipeline.providers.registry import get_provider
 from pipeline.step_errors import MissingPromptError
@@ -17,6 +19,7 @@ from pipeline.tracker import (
     get_ocr_chunks,
     get_ocr_pages_for_range,
     get_scout_results,
+    increment_formatting_attempts,
     pipeline_get,
     pipeline_update,
 )
@@ -121,6 +124,15 @@ def run_formatting(doc_id: str, supa_client: Client) -> dict:
     )
     if already_done:
         return {"status": "skipped", "completed_steps": 0, "failed_steps": 0, "failed_details": []}
+
+    attempts = increment_formatting_attempts(supa_client, doc_id)
+    if attempts > MAX_FORMATTING_ATTEMPTS:
+        return {
+            "status": "skipped",
+            "completed_steps": 0,
+            "failed_steps": 0,
+            "failed_details": [{"step": "all", "reason": f"exceeded max attempts ({MAX_FORMATTING_ATTEMPTS})"}],
+        }
 
     # Fetch OCR chunks and concatenate
     ocr_chunks = get_ocr_chunks(supa_client, doc_id)

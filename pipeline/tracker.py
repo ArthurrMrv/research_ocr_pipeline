@@ -121,6 +121,16 @@ def scout_upsert(client: Client, row: dict) -> None:
     client.table("scout_results").upsert(row).execute()
 
 
+def increment_formatting_attempts(client: Client, doc_id: str) -> int:
+    """Increment formatting_attempts counter and return the new value."""
+    row = pipeline_get(client, doc_id)
+    if row is None:
+        return 0
+    new_count = (row.get("formatting_attempts") or 0) + 1
+    pipeline_update(client, doc_id, {"formatting_attempts": new_count})
+    return new_count
+
+
 def get_scout_results(client: Client, doc_id: str) -> dict:
     """Return scout results as {step_name: row_dict} for a doc_id."""
     result = (

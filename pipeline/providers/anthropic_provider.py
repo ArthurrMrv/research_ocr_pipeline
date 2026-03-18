@@ -21,11 +21,13 @@ class AnthropicProvider(LLMProvider):
 
     def call(self, prompt: str, ocr_text: str) -> dict:
         filled = prompt.replace("{ocr_text}", ocr_text)
-        response = self._client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            system=JSON_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": filled}],
+        response = self._call_with_retry(
+            lambda: self._client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                system=JSON_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": filled}],
+            )
         )
         raw = response.content[0].text
         try:

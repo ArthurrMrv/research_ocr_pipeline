@@ -1,4 +1,10 @@
+from __future__ import annotations
+
+import time
 from abc import ABC, abstractmethod
+from typing import Any, Callable, TypeVar
+
+_T = TypeVar("_T")
 
 
 class LLMProvider(ABC):
@@ -18,3 +24,19 @@ class LLMProvider(ABC):
         Raises:
             ValueError: if the API response cannot be parsed as JSON.
         """
+
+    def _call_with_retry(self, fn: Callable[[], _T], *, retries: int = 3) -> _T:
+        """Call fn(), retrying on rate-limit (429) or transient server (5xx) errors."""
+        for attempt in range(retries):
+            try:
+                return fn()
+            except Exception as exc:
+                if attempt == retries - 1:
+                    raise
+                status = getattr(exc, "status_code", None)
+                if status is not None and (status == 429 or status >= 500):
+                    time.sleep(2 ** (attempt + 1))  # 2s, 4s, 8s
+                else:
+                    raise
+        # unreachable, satisfies type checker
+        raise RuntimeError("unreachable")

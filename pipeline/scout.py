@@ -48,7 +48,7 @@ def run_scout(
 
     if result is None:
         append_error(client, doc_id, "Scout: output failed schema validation after retry")
-        return
+        return "error"
 
     _, _, config = load_step("_scout")
     scout_model = config["model"]

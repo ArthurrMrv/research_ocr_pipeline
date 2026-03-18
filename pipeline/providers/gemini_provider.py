@@ -20,12 +20,14 @@ class GeminiProvider(LLMProvider):
 
     def call(self, prompt: str, ocr_text: str) -> dict:
         filled = prompt.replace("{ocr_text}", ocr_text)
-        response = self._client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": filled}],
-            response_format={"type": "json_object"},
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
+        response = self._call_with_retry(
+            lambda: self._client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": filled}],
+                response_format={"type": "json_object"},
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            )
         )
         raw = response.choices[0].message.content
         try:
