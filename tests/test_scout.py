@@ -35,9 +35,12 @@ class TestRunScout:
     def test_skips_if_already_scouted_no_force(self):
         pipeline_row = self._make_pipeline_row(last_scout="2024-01-01T00:00:00+00:00")
         client = _make_client(pipeline_row)
+        all_steps = {"extract_model_name": {}, "extract_table": {}}
 
-        with patch("pipeline.scout.run_step") as mock_step:
-            run_scout("doc1", client, force=False)
+        with patch("pipeline.scout.run_step") as mock_step, \
+             patch("pipeline.scout.get_scout_results", return_value=all_steps):
+            result = run_scout("doc1", client, force=False)
+            assert result == "skipped"
             mock_step.assert_not_called()
 
     def test_raises_if_no_pipeline_row(self):

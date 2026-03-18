@@ -9,6 +9,7 @@ from pipeline.formatting import load_step, run_step
 from pipeline.tracker import (
     append_error,
     get_ocr_chunks,
+    get_scout_results,
     pipeline_get,
     pipeline_update,
     scout_upsert,
@@ -33,7 +34,10 @@ def run_scout(
 
     already_done = pipeline_row.get("last_scout") is not None
     if already_done and not force:
-        return "skipped"
+        existing = get_scout_results(client, doc_id)
+        if all(step in existing for step in ACTIVE_STEPS):
+            return "skipped"
+        # Results missing or incomplete — re-run scout
 
     ocr_chunks = get_ocr_chunks(client, doc_id)
     if not ocr_chunks:
