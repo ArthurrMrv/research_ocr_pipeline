@@ -281,16 +281,30 @@ def _run_formatting_step(
     multiple=True,
     help="Run only specific pipeline step(s). Omit to run all.",
 )
+@click.option(
+    "--doc",
+    "doc_filter",
+    type=str,
+    default=None,
+    help="Filter to a single document by partial name match (case-insensitive).",
+)
+@click.option("--debug", is_flag=True, help="Print full LLM responses and per-page OCR status.")
 def run(
     pdf_dir: str,
     parse_all: bool,
     parse_date: str | None,
     step: tuple[str, ...],
+    doc_filter: str | None,
+    debug: bool,
 ) -> None:
     """Run the ingestion pipeline on all PDFs in PDF_DIR."""
     load_dotenv()
     pipeline_start = time.monotonic()
     supa = get_supabase_client()
+
+    if debug:
+        from pipeline import debug_logger
+        debug_logger.enable()
 
     steps_to_run = set(step) if step else set(ALL_STEPS)
 
@@ -298,6 +312,8 @@ def run(
     console.rule("[cyan bold]Ingestion Pipeline")
     console.print(f"  [dim]PDF directory[/dim] : {pdf_dir}")
     console.print(f"  [dim]Steps        [/dim] : {', '.join(s for s in ALL_STEPS if s in steps_to_run)}")
+    if debug:
+        console.print("  [dim]Debug mode  [/dim] : [yellow bold]ON[/yellow bold]")
     if parse_all:
         console.print("  [dim]Mode         [/dim] : [red bold]force re-process ALL[/red bold]")
     elif parse_date:
@@ -326,6 +342,13 @@ def run(
     with console.status("[bold]Loading document index...[/bold]"):
         for did in all_ids:
             doc_labels[did] = _doc_label(supa, did)
+
+    if doc_filter:
+        all_ids = [did for did in all_ids if doc_filter.lower() in doc_labels[did].lower()]
+        if not all_ids:
+            console.print(f"[red]No documents matched '--doc {doc_filter}'[/red]")
+            return
+        console.print(f"  [dim]Doc filter  [/dim] : {doc_filter} → {len(all_ids)} match(es)")
 
     console.print(f"  Total documents: [bold]{len(all_ids)}[/bold]")
 

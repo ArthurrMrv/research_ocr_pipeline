@@ -3,6 +3,7 @@ import os
 
 import anthropic
 
+from pipeline import debug_logger
 from pipeline.providers.base import LLMProvider
 
 JSON_SYSTEM_PROMPT = (
@@ -31,6 +32,9 @@ class AnthropicProvider(LLMProvider):
         )
         raw = response.content[0].text
         try:
-            return json.loads(raw)
+            result = json.loads(raw)
+            debug_logger.print_llm_response(f"Anthropic / {self.model}", raw, result)
+            return result
         except json.JSONDecodeError as exc:
+            debug_logger.print_llm_response(f"Anthropic / {self.model}", raw)
             raise ValueError(f"Anthropic returned non-JSON: {raw[:200]}") from exc

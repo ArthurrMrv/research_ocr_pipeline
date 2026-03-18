@@ -11,6 +11,7 @@ from PIL import Image
 from supabase import Client
 
 from config import MAX_PAGES_PER_BATCH, OCR_MODEL_ID, OCR_PROVIDER, ZAI_MAX_PAGES
+from pipeline import debug_logger
 from pipeline.ocr_providers.registry import get_ocr_provider
 from pipeline.tracker import (
     append_error,
@@ -122,6 +123,7 @@ def run_ocr(
                     page_num = i + 1
                     if not raw_content.strip():
                         empty_pages.append(page_num)
+                    debug_logger.print_ocr_page(page_num, empty=not raw_content.strip())
                     content = _add_page_marker(raw_content, page_num)
                     silver_upsert(
                         client,
@@ -149,6 +151,7 @@ def run_ocr(
                         page_num = batch_start + i + 1
                         if not raw_content.strip():
                             empty_pages.append(page_num)
+                        debug_logger.print_ocr_page(page_num, empty=not raw_content.strip())
                         content = _add_page_marker(raw_content, page_num)
                         silver_upsert(
                             client,

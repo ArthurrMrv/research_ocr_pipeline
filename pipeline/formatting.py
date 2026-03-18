@@ -7,6 +7,7 @@ import jsonschema
 from supabase import Client
 
 from config import ACTIVE_STEPS, SCOUT_PAGE_PADDING, STEPS_DIR
+from pipeline import debug_logger
 
 MAX_FORMATTING_ATTEMPTS = 3
 from pipeline.page_utils import get_total_pages
@@ -94,6 +95,7 @@ def run_step(
     provider = get_provider(provider_name, config)
 
     for attempt in range(2):
+        debug_logger.print_step_start(step_name)
         result = provider.call(prompt_text, ocr_text)
         try:
             validate_output(result, schema, step_name)

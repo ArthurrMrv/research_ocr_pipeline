@@ -3,6 +3,7 @@ import os
 
 from openai import OpenAI
 
+from pipeline import debug_logger
 from pipeline.providers.base import LLMProvider
 
 
@@ -27,6 +28,9 @@ class OpenAIProvider(LLMProvider):
         )
         raw = response.choices[0].message.content
         try:
-            return json.loads(raw)
+            result = json.loads(raw)
+            debug_logger.print_llm_response(f"OpenAI / {self.model}", raw, result)
+            return result
         except json.JSONDecodeError as exc:
+            debug_logger.print_llm_response(f"OpenAI / {self.model}", raw)
             raise ValueError(f"OpenAI returned non-JSON: {raw[:200]}") from exc

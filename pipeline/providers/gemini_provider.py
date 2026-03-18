@@ -5,6 +5,7 @@ import os
 
 from openai import OpenAI
 
+from pipeline import debug_logger
 from pipeline.providers.base import LLMProvider
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -31,6 +32,9 @@ class GeminiProvider(LLMProvider):
         )
         raw = response.choices[0].message.content
         try:
-            return json.loads(raw)
+            result = json.loads(raw)
+            debug_logger.print_llm_response(f"Gemini / {self.model}", raw, result)
+            return result
         except json.JSONDecodeError as exc:
+            debug_logger.print_llm_response(f"Gemini / {self.model}", raw)
             raise ValueError(f"Gemini returned non-JSON: {raw[:200]}") from exc

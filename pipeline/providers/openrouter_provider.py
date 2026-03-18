@@ -3,6 +3,7 @@ import os
 
 from openai import OpenAI
 
+from pipeline import debug_logger
 from pipeline.providers.base import LLMProvider
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -29,6 +30,9 @@ class OpenRouterProvider(LLMProvider):
         )
         raw = response.choices[0].message.content
         try:
-            return json.loads(raw)
+            result = json.loads(raw)
+            debug_logger.print_llm_response(f"OpenRouter / {self.model}", raw, result)
+            return result
         except json.JSONDecodeError as exc:
+            debug_logger.print_llm_response(f"OpenRouter / {self.model}", raw)
             raise ValueError(f"OpenRouter returned non-JSON: {raw[:200]}") from exc
