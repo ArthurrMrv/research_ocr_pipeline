@@ -16,7 +16,6 @@ build/
 *.egg
 
 # uv
-uv.lock
 
 # Testing
 .pytest_cache/
