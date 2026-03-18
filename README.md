@@ -15,7 +15,7 @@ flowchart LR
     B --> C[(bronze_mapping\npipeline)]
     C --> D[2. OCR]
     D --> E[(ocr_results\n75-page chunks)]
-    E --> F[3. Scout\ngemini-2.0-flash-lite]
+    E --> F[3. Scout\ngemini-3.1-flash-lite-preview]
     F --> G[(scout_results\nper-step page ranges)]
     G --> H[4. Formatting\nSurgeon]
     H --> I[(formatting\nresults)]
@@ -82,7 +82,7 @@ Selected via `OCR_PROVIDER` env var.
 
 **Input:** Concatenated OCR text (all chunks)
 **Output:** Rows in `scout_results` (one per active step)
-**Model:** `gemini-2.0-flash-lite` via Google's OpenAI-compatible endpoint
+**Model:** `gemini-3.1-flash-lite-preview` via Google's OpenAI-compatible endpoint
 
 ```mermaid
 flowchart TD
@@ -139,7 +139,7 @@ flowchart TD
 |------|----------|-------|-----------|---------|
 | `extract_model_name` | moonshot | kimi-k2.5 | 1024 | Extract AI model names and specs |
 | `extract_table` | moonshot | kimi-k2.5 | 4096 | Extract performance/benchmark tables |
-| `_scout` | gemini | gemini-2.0-flash-lite | 2048 | Identify relevant page ranges |
+| `_scout` | gemini | gemini-3.1-flash-lite-preview | 2048 | Identify relevant page ranges |
 
 Steps are defined under `steps/<step_name>/` with three files: `config.json`, `schema.json`, `prompt.txt`. Company-specific prompts can be placed in `steps/<step_name>/prompts/<CompanyName>.txt`.
 
