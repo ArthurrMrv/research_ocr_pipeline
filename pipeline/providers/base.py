@@ -4,7 +4,18 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any, Callable, TypeVar
 
+from pipeline import debug_logger
+
 _T = TypeVar("_T")
+
+
+class NonJSONResponseError(ValueError):
+    """Raised when a provider returns text that cannot be parsed as JSON."""
+
+    def __init__(self, provider_name: str, raw_response: str) -> None:
+        self.provider_name = provider_name
+        self.raw_response = raw_response
+        super().__init__(f"{provider_name} returned non-JSON: {raw_response[:200]}")
 
 
 class LLMProvider(ABC):
@@ -40,3 +51,7 @@ class LLMProvider(ABC):
                     raise
         # unreachable, satisfies type checker
         raise RuntimeError("unreachable")
+
+    def _non_json_error(self, provider_name: str, raw: str) -> NonJSONResponseError:
+        """Build a structured non-JSON error that keeps the full raw response."""
+        return NonJSONResponseError(provider_name, raw)

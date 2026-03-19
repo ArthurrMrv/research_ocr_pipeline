@@ -1,56 +1,50 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "ModelExtractor",
+  "title": "EquityReturnsModelExtractor",
   "type": "object",
-  "required": ["simulation_engines", "variables_and_risk_factors"],
+  "required": [
+    "model_name",
+    "variables",
+    "steps_summary",
+    "steps_detailed",
+    "mermaid_diagram"
+  ],
   "properties": {
-
-    "simulation_engines": {
-      "type": "array",
-      "description": "Primary engines or frameworks, named or functionally described.",
-      "items": {
-        "type": "object",
-        "required": ["engine_name", "institution_or_vendor"],
-        "properties": {
-          "engine_name":            { "type": "string" },
-          "institution_or_vendor":  { "type": "string" },
-          "core_purpose":           { "type": "string" },
-          "mathematical_methods": {
-            "type": "array",
-            "description": "Methods embedded in this engine specifically.",
-            "items": { "type": "string" }
-          },
-          "sub_models": {
-            "type": "array",
-            "description": "Asset-class-specific models nested within the engine.",
-            "items": {
-              "type": "object",
-              "properties": {
-                "sub_model_name":  { "type": "string" },
-                "asset_class":     { "type": "string" },
-                "method":          { "type": "string" }
-              }
-            }
-          }
-        }
-      }
+    "model_name": {
+      "type": "string",
+      "description": "Exact model name or label used in the report for the U.S. equity return forecast approach."
     },
-
-    "variables_and_risk_factors": {
+    "notes_model": {
+      "type": "string",
+      "description": "Optional short description summarizing the approach."
+    },
+    "steps_summary": {
+      "type": "string",
+      "description": "Concise summary of the end-to-end U.S. equity forecast approach."
+    },
+    "steps_detailed": {
+      "type": "string",
+      "description": "More detailed summary of the end-to-end U.S. equity forecast approach and assumptions."
+    },
+    "variables": {
       "type": "array",
-      "description": "All input variables grouped by category across all engines.",
-      "items": {
-        "type": "object",
-        "required": ["category", "variables"],
-        "properties": {
-          "category":  { "type": "string" },
-          "variables": {
-            "type": "array",
-            "items": { "type": "string" }
-          }
-        }
-      }
+      "description": "Flat list of variables, inputs, and factors used by the model.",
+      "items": { "type": "string" }
+    },
+    "variables_important": {
+      "type": "array",
+      "description": "Optional list of explicitly important factors mentioned in the report for this approach.",
+      "items": { "type": "string" }
+    },
+    "mermaid_diagram": {
+      "type": "string",
+      "description": "Mermaid flowchart showing how initial variables feed intermediary steps or checks and lead to the final U.S. equity return output."
+    },
+    "sub_models": {
+      "type": "array",
+      "description": "Optional list of named sub-models or component models mentioned for this extraction target.",
+      "items": { "type": "string" }
     }
-
-  }
+  },
+  "additionalProperties": false
 }

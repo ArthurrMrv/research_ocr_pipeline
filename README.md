@@ -14,9 +14,9 @@ flowchart LR
     A[📁 PDF Directory] --> B[1. Ingest]
     B --> C[(bronze_mapping\npipeline)]
     C --> D[2. OCR]
-    D --> E[(ocr_results\n75-page chunks)]
+    D --> E[(ocr_results\nper-page OCR)]
     E --> F[3. Scout\ngemini-3.1-flash-lite-preview]
-    F --> G[(scout_results\nper-step page ranges)]
+    F --> G[(scout_page_scores\nper-step page scores)]
     G --> H[4. Formatting\nSurgeon]
     H --> I[(formatting\nresults)]
 
@@ -50,22 +50,17 @@ flowchart TD
 ## Stage 2 — OCR
 
 **Input:** `bronze_mapping.file_path`
-**Output:** Rows in `ocr_results` (one per 75-page chunk)
+**Output:** Rows in `ocr_results` (one per page)
 
 ```mermaid
 flowchart TD
     A[Fetch file_path] --> B[Render PDF\n150 DPI via PyMuPDF]
-    B --> C{Total pages\n> 75?}
-    C -- No --> D[Single chunk\npage_offset = 0]
-    C -- Yes --> E[Chunk 1: pages 1–75\npage_offset = 0]
-    E --> F[Chunk 2: pages 76–150\npage_offset = 75]
-    F --> G[Chunk N…]
-    D & F & G --> H[OCR Provider]
-    H --> I[Store in ocr_results\nwith pages = '1-75' etc.]
-    I --> J[Update pipeline.last_ocr]
+    B --> C[OCR Provider]
+    C --> D[Store one row per page\nwith absolute page_number]
+    D --> E[Update pipeline.last_ocr]
 ```
 
-**Critical design:** Each chunk receives a `page_offset` so every page marker in the output is an **absolute** page number (`--- Page 76 ---`, not `--- Page 1 ---`). This enables the Scout to return meaningful global page ranges.
+**Critical design:** every OCR row is page-addressable and includes an absolute page marker (`--- Page 76 ---`, not `--- Page 1 ---`). This lets Scout score and Formatting select individual pages without reconstructing page ranges.
 
 ### OCR Providers
 
@@ -80,48 +75,46 @@ Selected via `OCR_PROVIDER` env var.
 
 ## Stage 3 — Scout
 
-**Input:** Concatenated OCR text (all chunks)
-**Output:** Rows in `scout_results` (one per active step)
+**Input:** OCR text page by page
+**Output:** Rows in `scout_page_scores` (one per active step per page)
 **Model:** `gemini-3.1-flash-lite-preview` via Google's OpenAI-compatible endpoint
 
 ```mermaid
 flowchart TD
-    A[Fetch & concatenate\nocr_results chunks] --> B[Load _scout step\nconfig + prompt]
-    B --> C[Call Gemini Flash-Lite\nwith full OCR text]
+    A[Fetch OCR pages] --> B[Load _scout_page step\nconfig + prompt]
+    B --> C[For each non-empty page\ncall Gemini Flash-Lite]
     C --> D{Valid JSON\nschema?}
     D -- No --> E[Append error\nto pipeline.error]
-    D -- Yes --> F{Step in\nACTIVE_STEPS?}
-    F -- No --> G[Ignore]
-    F -- Yes --> H[Upsert scout_results\nstep_name · start_page · end_page]
-    H --> I[Update pipeline.last_scout]
+    D -- Yes --> F[Upsert scout_page_scores\nstep_name · page_number · score]
+    F --> I[Update pipeline.last_scout]
 ```
 
 **Scout output format:**
 ```json
 {
-  "extract_model_name": { "start_page": 5, "end_page": 8 },
-  "extract_table":      { "start_page": 12, "end_page": 15 }
+  "extract_model_name": 0.91,
+  "extract_table": 0.08
 }
 ```
 
-The Scout stores raw page ranges. Padding (`SCOUT_PAGE_PADDING = 1`) is applied in the next stage.
+Each page gets one score per active step. Formatting keeps only pages at or above `SCOUT_SCORE_THRESHOLD`.
 
 ---
 
 ## Stage 4 — Formatting (Surgeon)
 
-**Input:** OCR text + scout page ranges
+**Input:** OCR text + scout page scores
 **Output:** Rows in `formatting` (one per active step)
 
 ```mermaid
 flowchart TD
-    A[Fetch ocr_results\nconcatenate] --> B[Fetch scout_results]
-    B --> C{Scout results\nexist?}
+    A[Fetch ocr_results\nconcatenate] --> B[Fetch scout_page_scores]
+    B --> C{Scout scores\nexist?}
     C -- No scout run --> D[Use full OCR text\nfor all steps]
-    C -- Scout ran --> E{Step in\nscout_results?}
-    E -- No --> F[append_error\nskip step]
-    E -- Yes --> G[Apply ±1 page padding\nclamped to document bounds]
-    G --> H[extract_pages\nfiltered OCR text]
+    C -- Scout ran --> E[Keep pages with\nscore >= threshold]
+    E --> F{Any shortlisted\npages?}
+    F -- No --> G[append_error\nskip step]
+    F -- Yes --> H[Concatenate shortlisted\npages only]
     D & H --> I[run_step\nLLM extraction]
     I --> J{Schema\nvalid?}
     J -- Fail x2 --> K[append_error\nskip]
@@ -129,7 +122,7 @@ flowchart TD
     L --> M[Update pipeline.last_formatting]
 ```
 
-**Page extraction:** `extract_pages(ocr_text, start, end)` splits on `--- Page N ---` markers and returns only sections within the requested range. This means the surgeon model receives a focused context — often 3–5 pages instead of 100+.
+**Page selection:** formatting concatenates only shortlisted pages for a step. If scout ran and no page clears the threshold, that step is skipped rather than falling back to the full document.
 
 ---
 
@@ -139,9 +132,10 @@ flowchart TD
 |------|----------|-------|-----------|---------|
 | `extract_model_name` | moonshot | kimi-k2.5 | 1024 | Extract AI model names and specs |
 | `extract_table` | moonshot | kimi-k2.5 | 4096 | Extract performance/benchmark tables |
-| `_scout` | gemini | gemini-3.1-flash-lite-preview | 2048 | Identify relevant page ranges |
+| `_scout_page` | gemini | gemini-3.1-flash-lite-preview | 256 | Score one page for each extraction step |
 
 Steps are defined under `steps/<step_name>/` with three files: `config.json`, `schema.json`, `prompt.txt`. Company-specific prompts can be placed in `steps/<step_name>/prompts/<CompanyName>.txt`.
+Each extraction step `config.json` should also include a `definition` field used by `_scout_page` to score page relevance.
 
 ---
 
@@ -210,15 +204,15 @@ erDiagram
     }
     ocr_results {
         text doc_id FK
-        text pages
+        int page_number
         text ocr_model
         text content
     }
-    scout_results {
+    scout_page_scores {
         text doc_id FK
         text step_name
-        int start_page
-        int end_page
+        int page_number
+        float score
         text scout_model
         timestamptz created_at
     }
@@ -231,7 +225,7 @@ erDiagram
 
     bronze_mapping ||--|| pipeline : "tracks"
     bronze_mapping ||--o{ ocr_results : "has"
-    bronze_mapping ||--o{ scout_results : "has"
+    bronze_mapping ||--o{ scout_page_scores : "has"
     bronze_mapping ||--o{ formatting : "has"
 ```
 
@@ -256,27 +250,26 @@ sequenceDiagram
 
     CLI->>OCR: run_ocr(doc_id)
     OCR->>OCR: render 120 pages at 150 DPI
-    OCR->>OCR: chunk 1: pages 1–75 (page_offset=0)
-    OCR->>Supabase: INSERT ocr_results (pages=1-75, --- Page 1 --- ... --- Page 75 ---)
-    OCR->>OCR: chunk 2: pages 76–120 (page_offset=75)
-    OCR->>Supabase: INSERT ocr_results (pages=76-120, --- Page 76 --- ... --- Page 120 ---)
+    OCR->>Supabase: UPSERT ocr_results rows per page
     OCR->>Supabase: UPDATE pipeline.last_ocr
 
     CLI->>Scout: run_scout(doc_id)
-    Scout->>Supabase: GET ocr_results → concatenate 120 pages
-    Scout->>Gemini: "find extract_model_name and extract_table pages"
-    Gemini-->>Scout: {"extract_model_name": {"start_page":8,"end_page":11}, "extract_table": {"start_page":42,"end_page":48}}
-    Scout->>Supabase: UPSERT scout_results × 2
+    Scout->>Supabase: GET ocr_results page rows
+    loop for each non-empty page
+        Scout->>Gemini: "score this page for each extraction step"
+        Gemini-->>Scout: {"extract_model_name":0.82,"extract_table":0.05}
+        Scout->>Supabase: UPSERT scout_page_scores
+    end
     Scout->>Supabase: UPDATE pipeline.last_scout
 
     CLI->>Surgeon: run_formatting(doc_id)
-    Surgeon->>Supabase: GET scout_results
-    Surgeon->>Surgeon: extract_model_name → pages 7–12 (±1 padding)
-    Surgeon->>Kimi: "extract model names" + 6 pages of text
+    Surgeon->>Supabase: GET scout_page_scores
+    Surgeon->>Surgeon: extract_model_name → keep only pages >= threshold
+    Surgeon->>Kimi: "extract model names" + shortlisted pages
     Kimi-->>Surgeon: {"model_name": "Blackwell B200", ...}
     Surgeon->>Supabase: UPSERT formatting (step=extract_model_name)
-    Surgeon->>Surgeon: extract_table → pages 41–49 (±1 padding)
-    Surgeon->>Kimi: "extract table" + 9 pages of text
+    Surgeon->>Surgeon: extract_table → keep only pages >= threshold
+    Surgeon->>Kimi: "extract table" + shortlisted pages
     Kimi-->>Surgeon: {"tables": [...]}
     Surgeon->>Supabase: UPSERT formatting (step=extract_table)
     Surgeon->>Supabase: UPDATE pipeline.last_formatting
@@ -311,24 +304,27 @@ uv run python main.py /path/to/pdfs --parse-date 2025-01-01
 
 ```
 steps/my_step/
-├── config.json      # {"provider": "moonshot", "model": "kimi-k2.5", "temperature": 0, "max_tokens": 2048}
+├── config.json      # {"definition": "...", "provider": "moonshot", "model": "kimi-k2.5", "temperature": 0, "max_tokens": 2048}
 ├── schema.json      # JSON Schema for the expected output
 └── prompt.txt       # Prompt with {ocr_text} placeholder
 ```
 
 2. Add `"my_step"` to `ACTIVE_STEPS` in `config.py`
 
-3. Update `steps/_scout/prompt.txt` to describe what pages the scout should look for
+3. Update `steps/_scout_page/prompt.txt` and `pipeline/scout.py` step descriptions if the new step needs scout relevance scoring
 
 That's it — the scout will automatically find the relevant pages, and the surgeon will run your step on the filtered text.
 
 ## What it does
 
 1. **Bronze — Ingest** registers PDF files in Supabase with a stable, deterministic ID (UUID5 of the absolute file path). Running it twice on the same file is a no-op.
-2. **Silver — OCR** renders each PDF page to an image and runs it through [GLM-OCR](https://huggingface.co/zai-org/GLM-OCR) to extract raw text. Results are stored per-document.
-3. **Gold — Formatting** takes the OCR text and runs a sequence of LLM prompts (Kimi K2.5 via Moonshot API) to produce structured JSON outputs, one per step (e.g. model name extraction, table extraction).
+2. **Silver — OCR** renders each PDF page to an image and runs it through [GLM-OCR](https://huggingface.co/zai-org/GLM-OCR) to extract raw text. Results are stored per-page.
+3. **Silver — Scout** scores each OCR-successful page for each extraction step and persists those page-level relevance scores.
+4. **Gold — Formatting** takes only the shortlisted OCR pages for each step and runs the extraction prompts (Kimi K2.5 via Moonshot API).
 
 Pipeline state is tracked in Supabase PostgreSQL so every stage is resumable and idempotent.
+
+To enable the new scout flow, apply [schema_changes.sql](/Users/arthurm/Documents/School/AIDAMS/bocconi/research_assistant/ingestion_pipeline_reports/schema_changes.sql) in Supabase before running the pipeline.
 
 ---
 
@@ -341,11 +337,13 @@ ingestion_pipeline_reports/
 ├── pipeline/
 │   ├── tracker.py        Supabase DB helpers
 │   ├── ingest.py         Bronze layer — register PDFs
-│   ├── ocr.py            Silver layer — GLM-OCR extraction
+│   ├── ocr.py            Silver layer — page-level GLM-OCR extraction
+│   ├── scout.py          Silver layer — page-level relevance scoring
 │   └── formatting.py     Gold layer — Kimi K2.5 structured output
-└── prompts/
-    ├── extract_model_name.txt
-    └── extract_table.txt
+└── steps/
+    ├── _scout_page/
+    ├── extract_model_name/
+    └── extract_table/
 ```
 
 ### Database schema (Supabase PostgreSQL)
@@ -353,8 +351,9 @@ ingestion_pipeline_reports/
 | Table | Layer | Description |
 |-------|-------|-------------|
 | `bronze_mapping` | Bronze | Append-only registry of ingested PDFs (no deletes enforced via trigger) |
-| `pipeline` | Silver | Per-document processing state (`last_ocr`, `last_formatting`, `error`) |
-| `ocr_results` | Silver | Full OCR text per document |
+| `pipeline` | Silver | Per-document processing state (`last_ocr`, `last_scout`, `last_formatting`, `error`) |
+| `ocr_results` | Silver | OCR text per document page |
+| `scout_page_scores` | Silver | Relevance score per document, step, and page |
 | `formatting` | Gold | Structured JSON output per document per step |
 
 ---
@@ -388,9 +387,10 @@ uv run python main.py ./reports/ --parse-date 2024-06-01
 
 ## Adding new formatting steps
 
-1. Add a prompt file: `prompts/<step_name>.txt`
+1. Create `steps/<step_name>/` with `prompt.txt`, `schema.json`, and `config.json`.
    - Use `{ocr_text}` as the placeholder for OCR content.
    - The prompt must instruct the model to return a JSON object.
+   - Add a `definition` string in `config.json`; scout uses it as the page-level relevance description for that step.
 2. Register the step in `config.py`:
    ```python
    ACTIVE_STEPS = ["extract_model_name", "extract_table", "<step_name>"]
@@ -405,4 +405,4 @@ uv run python main.py ./reports/ --parse-date 2024-06-01
 uv run pytest tests/ -v
 ```
 
-48 tests cover all layers: tracker, ingest, OCR, formatting, and CLI.
+The test suite covers tracker, ingest, OCR, scout, formatting, and CLI behavior.

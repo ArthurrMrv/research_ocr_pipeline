@@ -35,4 +35,4 @@ class MoonshotProvider(LLMProvider):
             return result
         except json.JSONDecodeError as exc:
             debug_logger.print_llm_response(f"Moonshot / {self.model}", raw)
-            raise ValueError(f"Moonshot returned non-JSON: {raw[:200]}") from exc
+            raise self._non_json_error("Moonshot", raw) from exc

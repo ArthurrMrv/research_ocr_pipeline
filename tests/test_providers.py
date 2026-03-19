@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pipeline.providers.base import LLMProvider
+from pipeline.providers.base import LLMProvider, NonJSONResponseError
 from pipeline.providers.registry import PROVIDERS, get_provider
 
 
@@ -57,7 +57,7 @@ class TestMoonshotProvider:
         provider._client.chat.completions.create.return_value.choices[0].message.content = (
             "not json"
         )
-        with pytest.raises(ValueError, match="non-JSON"):
+        with pytest.raises(NonJSONResponseError, match="non-JSON"):
             provider.call("prompt", "ocr text")
 
     def test_uses_moonshot_base_url(self, monkeypatch):
@@ -126,7 +126,7 @@ class TestAnthropicProvider:
         provider._client.messages.create.return_value.content = [
             MagicMock(text="not json")
         ]
-        with pytest.raises(ValueError, match="non-JSON"):
+        with pytest.raises(NonJSONResponseError, match="non-JSON"):
             provider.call("prompt", "ocr text")
 
     def test_raises_on_missing_api_key(self, monkeypatch):
@@ -186,8 +186,49 @@ class TestGeminiProvider:
             mock_openai_cls.return_value = mock_client
 
             provider = GeminiProvider(_STEP_CONFIG)
-            with pytest.raises(ValueError, match="non-JSON"):
+            with pytest.raises(NonJSONResponseError) as excinfo:
                 provider.call("prompt {ocr_text}", "text")
+
+        assert excinfo.value.raw_response == "not json at all"
+
+    def test_call_preserves_full_non_json_raw_response(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
+        raw = "{\n  \"tables\": [\n    1,\n    2\n  ]\n}\ntrailing text"
+        mock_response = _make_openai_response(raw)
+
+        from pipeline.providers.gemini_provider import GeminiProvider
+        with (
+            patch("pipeline.providers.gemini_provider.OpenAI") as mock_openai_cls,
+        ):
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai_cls.return_value = mock_client
+
+            provider = GeminiProvider(_STEP_CONFIG)
+            with pytest.raises(NonJSONResponseError) as excinfo:
+                provider.call("prompt {ocr_text}", "text")
+
+        assert excinfo.value.raw_response == raw
+
+    def test_call_truncates_non_json_exception_message(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
+        raw = "x" * 500
+        mock_response = _make_openai_response(raw)
+
+        from pipeline.providers.gemini_provider import GeminiProvider
+        with (
+            patch("pipeline.providers.gemini_provider.OpenAI") as mock_openai_cls,
+        ):
+            mock_client = MagicMock()
+            mock_client.chat.completions.create.return_value = mock_response
+            mock_openai_cls.return_value = mock_client
+
+            provider = GeminiProvider(_STEP_CONFIG)
+            with pytest.raises(NonJSONResponseError) as excinfo:
+                provider.call("prompt {ocr_text}", "text")
+
+        assert ("x" * 200) in str(excinfo.value)
+        assert ("x" * 201) not in str(excinfo.value)
 
     def test_uses_gemini_base_url(self, monkeypatch):
         monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")

@@ -36,6 +36,8 @@ cp .env.example .env   # if example exists, otherwise create manually
 SUPABASE_URL=https://hhkpfsympcpdmewbhhif.supabase.co
 SUPABASE_SERVICE_KEY=<your-supabase-service-role-key>
 MOONSHOT_API_KEY=<your-moonshot-api-key>
+GOOGLE_API_KEY=<your-google-api-key>
+SCOUT_SCORE_THRESHOLD=0.6
 ```
 
 ### Where to find each key
@@ -45,6 +47,8 @@ MOONSHOT_API_KEY=<your-moonshot-api-key>
 | `SUPABASE_URL` | Supabase dashboard → Project Settings → API → Project URL |
 | `SUPABASE_SERVICE_KEY` | Supabase dashboard → Project Settings → API → `service_role` key (keep this secret) |
 | `MOONSHOT_API_KEY` | [platform.moonshot.cn](https://platform.moonshot.cn) → API Keys |
+| `GOOGLE_API_KEY` | Google AI Studio / Google AI API credentials for Gemini |
+| `SCOUT_SCORE_THRESHOLD` | Optional. Global page-shortlisting threshold for Scout, default `0.6` |
 
 > **Never commit `.env` to version control.**
 
@@ -55,8 +59,7 @@ MOONSHOT_API_KEY=<your-moonshot-api-key>
 The schema is already applied to the Supabase project. If you need to re-apply it (e.g. for a fresh project), run the migration SQL from the plan or use the Supabase dashboard SQL editor:
 
 ```sql
--- See the CREATE TABLE statements in the plan document
--- Tables: bronze_mapping, pipeline, ocr_results, formatting
+-- Apply schema_changes.sql for the page-score scout table
 ```
 
 ---
@@ -73,7 +76,8 @@ On first run:
 - GLM-OCR model weights (~3–5 GB) are downloaded from Hugging Face to `~/.cache/huggingface/`. This happens once.
 - All PDFs are registered in `bronze_mapping`.
 - OCR runs page-by-page for each document.
-- Formatting steps run against the Kimi API.
+- Scout scores each OCR-successful page.
+- Formatting runs against only the shortlisted pages per step.
 
 ---
 

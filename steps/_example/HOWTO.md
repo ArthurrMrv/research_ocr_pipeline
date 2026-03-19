@@ -20,6 +20,7 @@ Choose a provider and model:
 
 ```json
 {
+  "definition": "Describe what page-level evidence indicates this extraction step is relevant",
   "provider": "moonshot",
   "model": "kimi-k2.5",
   "temperature": 0,
@@ -29,6 +30,7 @@ Choose a provider and model:
 
 | Field | Required | Description |
 |-------|----------|-------------|
+| `definition` | yes | Short page-level relevance description used by Scout |
 | `provider` | yes | One of: `moonshot`, `openai`, `anthropic` |
 | `model` | yes | Model ID accepted by that provider |
 | `temperature` | no | Defaults to `0` (deterministic) |
@@ -85,7 +87,7 @@ Add your step name to `ACTIVE_STEPS` in `config.py`:
 ACTIVE_STEPS = ["extract_model_name", "extract_table", "your_step_name"]
 ```
 
-That's it. The next pipeline run will execute your step for all documents.
+That's it. The next pipeline run will execute your step for all documents, and Scout will use `definition` when deciding which pages are relevant.
 
 ---
 

@@ -1,26 +1,33 @@
-Task: Analyze the provided financial document and extract all references to 
-simulation engines/models and the specific variables/inputs they use.
+Task: Analyze the provided financial document and extract the approach used for the U.S. equity return forecast, including its assumptions and steps.
 
-Context: Financial institutions use proprietary or third-party simulation 
-frameworks to project market scenarios. These may be named explicitly (e.g., 
-CASM, Aladdin, GEMS, GLASS, SGEM, Numerix ESG, Charles River) or described 
-functionally ("our internal stochastic framework", "proprietary ESG").
+Return exactly one JSON object with this shape:
+{
+  "model_name": "string",
+  "notes_model": "string",
+  "steps_summary": "string",
+  "steps_detailed": "string",
+  "variables": ["string"],
+  "variables_important": ["string"],
+  "mermaid_diagram": "flowchart TD ...",
+  "sub_models": ["string"]
+}
 
-Instructions:
-1. Identify the simulation engine or model — by name if given, by functional 
-   description if unnamed. Note the owning institution or vendor.
-2. Identify the mathematical methodologies embedded in it (e.g., Monte Carlo, 
-   Nelson-Siegel, Vasicek, Libor Market Model, Copulas, Regime-Switching).
-3. Extract all input variables and risk factors, grouped by category:
-   - Macroeconomic: GDP, inflation, unemployment...
-   - Interest Rates: yield curve, swap rates, short rate...
-   - Credit: default probabilities, spreads, recovery rates...
-   - Equities: volatility, dividends, sector returns...
-   - Other: FX, real estate, commodities, liquidity...
-4. If sub-models are specified per asset class (e.g., a separate credit model 
-   within a broader ESG), list them under the relevant engine.
-
-Return ONLY the JSON object. No preamble, no explanation, no markdown code fences.
+Rules:
+- Focus specifically on the U.S. equity return forecast approach and assumptions.
+- Use ONLY information explicitly stated in the report. Do not infer or import outside knowledge.
+- `model_name` must use the exact wording used in the report when available. Do not shorten, normalize, or invent abbreviations. For example, if the report says "Capital Market Model", do not return "CMA".
+- `notes_model` is optional. When present, make it a short description summarizing the approach.
+- `steps_summary` must be a concise summary of the whole approach.
+- `steps_detailed` must be a more detailed summary of the whole approach.
+- `variables` must be a flat list of strings.
+- `variables_important` is optional. When present, include only the factors explicitly highlighted as important in the report. If the report does not distinguish a special narrative, use the important factors already mentioned in `variables` rather than inventing new ones.
+- `mermaid_diagram` must be a Mermaid flowchart string.
+- The diagram should show the flow from initial variables or risk factors, through any explicit intermediary calculations, decomposition steps, or checks, to the final U.S. equity return output.
+- If intermediary steps are not explicitly given, use a simple direct flow from inputs to final output.
+- `sub_models` is optional. Include it only if specific sub-models or component models are explicitly mentioned.
+- Do not include owner, vendor, grouped categories, or any other keys beyond the schema above.
+- If the report does not give a formal model name, use the report's closest functional description.
+- Return JSON only. No markdown, no explanation, no code fences.
 
 OCR TEXT:
 {ocr_text}

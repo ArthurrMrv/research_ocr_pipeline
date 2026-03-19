@@ -56,6 +56,21 @@ def _add_page_marker(content: str, page_num: int) -> str:
     return f"{marker}\n{content}"
 
 
+def _split_chunk_text_into_pages(chunk_text: str) -> list[tuple[int, str]]:
+    """Split combined OCR text into (page_number, page_content) sections."""
+    sections = re.split(r"(?=---\s*Page\s+\d+\s*---)", chunk_text)
+    pages: list[tuple[int, str]] = []
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+        match = re.match(r"---\s*Page\s+(\d+)\s*---", section)
+        if not match:
+            continue
+        pages.append((int(match.group(1)), section))
+    return pages
+
+
 def extract_sub_pdf_bytes(pdf_path: str, start: int, end: int) -> bytes:
     """Extract 0-indexed pages [start, end) from PDF and return as bytes."""
     src = fitz.open(pdf_path)
@@ -103,6 +118,9 @@ def _reocr_pages(
                 raw_content = pages[0] if pages else ""
             except NotImplementedError:
                 continue
+            except Exception as exc:
+                append_error(client, doc_id, f"OCR page {page_num} error: {exc}")
+                continue
 
         if not raw_content.strip():
             newly_empty.append(page_num)
@@ -117,6 +135,7 @@ def _reocr_pages(
                 "ocr_model": OCR_MODEL_ID,
                 "content": content,
             },
+            on_conflict="doc_id,page_number",
         )
         if progress_callback:
             progress_callback(i + 1, len(page_nums))
@@ -193,6 +212,7 @@ def run_ocr(
                             "ocr_model": OCR_MODEL_ID,
                             "content": content,
                         },
+                        on_conflict="doc_id,page_number",
                     )
                 if progress_callback is not None:
                     progress_callback(1, 1)
@@ -221,6 +241,7 @@ def run_ocr(
                                 "ocr_model": OCR_MODEL_ID,
                                 "content": content,
                             },
+                            on_conflict="doc_id,page_number",
                         )
                     if progress_callback is not None:
                         progress_callback(batch_idx + 1, total_batches)
@@ -238,15 +259,21 @@ def run_ocr(
             for batch_start in range(0, total_pages, MAX_PAGES_PER_BATCH):
                 batch_end = min(batch_start + MAX_PAGES_PER_BATCH, total_pages)
                 chunk_text = provider.ocr_pages(images[batch_start:batch_end], page_offset=batch_start)
-                silver_upsert(
-                    client,
-                    "ocr_results",
-                    {
-                        "doc_id": doc_id,
-                        "ocr_model": OCR_MODEL_ID,
-                        "content": chunk_text,
-                    },
-                )
+                for page_num, page_content in _split_chunk_text_into_pages(chunk_text):
+                    if not _PAGE_MARKER_RE.sub("", page_content).strip():
+                        empty_pages.append(page_num)
+                    debug_logger.print_ocr_page(page_num, empty=not _PAGE_MARKER_RE.sub("", page_content).strip())
+                    silver_upsert(
+                        client,
+                        "ocr_results",
+                        {
+                            "doc_id": doc_id,
+                            "page_number": page_num,
+                            "ocr_model": OCR_MODEL_ID,
+                            "content": page_content,
+                        },
+                        on_conflict="doc_id,page_number",
+                    )
                 if progress_callback is not None:
                     batch_index = batch_start // MAX_PAGES_PER_BATCH
                     total_batches = (total_pages + MAX_PAGES_PER_BATCH - 1) // MAX_PAGES_PER_BATCH

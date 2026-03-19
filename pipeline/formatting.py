@@ -1,25 +1,38 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 
 import jsonschema
 from supabase import Client
 
-from config import ACTIVE_STEPS, SCOUT_PAGE_PADDING, STEPS_DIR
+from config import ACTIVE_STEPS, SCOUT_SCORE_THRESHOLD, STEPS_DIR
 from pipeline import debug_logger
 
-MAX_FORMATTING_ATTEMPTS = 3
-from pipeline.page_utils import get_total_pages
+_FORMATTING_ERROR_RE = re.compile(
+    r"^Formatting error \[(?P<step>[^\]]+)\](?: \(attempt \d+\))?: (?P<reason>.+)$",
+    re.DOTALL,
+)
+_FORMATTING_STEP_RE = re.compile(
+    r"^Formatting step \[(?P<step>[^\]]+)\]: (?P<reason>.+)$",
+    re.DOTALL,
+)
+_SCOUT_SHORTLIST_RE = re.compile(
+    r"^Scout shortlisted no pages for step \[(?P<step>[^\]]+)\] at threshold .+$",
+    re.DOTALL,
+)
 from pipeline.providers.registry import get_provider
+from pipeline.providers.base import NonJSONResponseError
 from pipeline.step_errors import MissingPromptError
 from pipeline.tracker import (
     append_error,
+    delete_formatting_results,
     formatting_upsert,
     get_bronze_row,
+    get_formatting_results,
     get_ocr_chunks,
-    get_ocr_pages_for_range,
-    get_scout_results,
+    get_scout_page_scores,
     increment_formatting_attempts,
     pipeline_get,
     pipeline_update,
@@ -40,7 +53,7 @@ def load_step(
     """
     step_dir = STEPS_DIR / step_name
     schema = json.loads((step_dir / "schema.json").read_text(encoding="utf-8"))
-    config = json.loads((step_dir / "config.json").read_text(encoding="utf-8"))
+    config = load_step_config(step_name)
 
     is_per_company = config.get("per_company", False)
 
@@ -59,6 +72,12 @@ def load_step(
         prompt_text = (step_dir / "prompt.txt").read_text(encoding="utf-8")
 
     return prompt_text, schema, config
+
+
+def load_step_config(step_name: str) -> dict:
+    """Load config.json for a step."""
+    step_dir = STEPS_DIR / step_name
+    return json.loads((step_dir / "config.json").read_text(encoding="utf-8"))
 
 
 def _find_company_prompt(prompts_dir, institution: str) -> str | None:
@@ -108,10 +127,138 @@ def run_step(
     return None  # unreachable, satisfies type checker
 
 
-def run_formatting(doc_id: str, supa_client: Client) -> dict:
+def _append_formatting_error(
+    client: Client,
+    doc_id: str,
+    *,
+    attempt: int,
+    step_name: str,
+    reason: str,
+    raw_output: str | None = None,
+) -> None:
+    """Append a structured formatting error entry to pipeline.error."""
+    context = {
+        "stage": "formatting",
+        "attempt": attempt,
+        "step": step_name,
+        "reason": reason,
+    }
+    if raw_output is not None:
+        context["raw_output"] = raw_output
+    append_error(
+        client,
+        doc_id,
+        f"Formatting error [{step_name}] (attempt {attempt}): {reason}",
+        context=context,
+    )
+
+
+def _get_formatting_attempt_history(pipeline_row: dict | None) -> list[dict]:
+    """Return grouped formatting failures from pipeline.error."""
+    if not pipeline_row:
+        return []
+
+    grouped: dict[int, list[dict]] = {}
+    legacy_failures: list[dict] = []
+    for entry in pipeline_row.get("error") or []:
+        if entry.get("stage") != "formatting":
+            parsed = _parse_legacy_formatting_failure(entry.get("message", ""))
+            if parsed is not None:
+                legacy_failures.append(parsed)
+            continue
+        attempt = entry.get("attempt")
+        step = entry.get("step")
+        reason = entry.get("reason")
+        if not isinstance(attempt, int) or not isinstance(step, str) or not isinstance(reason, str):
+            continue
+        failure = {"step": step, "reason": reason}
+        raw_output = entry.get("raw_output")
+        if isinstance(raw_output, str):
+            failure["raw_output"] = raw_output
+        grouped.setdefault(attempt, []).append(failure)
+
+    if not grouped and legacy_failures:
+        return _group_legacy_formatting_failures(legacy_failures)
+
+    return [
+        {"attempt": attempt, "failures": grouped[attempt]}
+        for attempt in sorted(grouped)
+    ]
+
+
+def _parse_legacy_formatting_failure(message: str) -> dict | None:
+    """Parse older formatting error strings that lack structured attempt metadata."""
+    for pattern in (_FORMATTING_ERROR_RE, _FORMATTING_STEP_RE):
+        match = pattern.match(message)
+        if match:
+            return {
+                "step": match.group("step"),
+                "reason": match.group("reason"),
+            }
+
+    match = _SCOUT_SHORTLIST_RE.match(message)
+    if match:
+        return {
+            "step": match.group("step"),
+            "reason": "no scout pages above threshold",
+        }
+
+    return None
+
+
+def _group_legacy_formatting_failures(failures: list[dict]) -> list[dict]:
+    """Infer attempt groupings for older formatting errors using step order resets."""
+    if not failures:
+        return []
+
+    step_order = {step_name: idx for idx, step_name in enumerate(ACTIVE_STEPS)}
+    grouped: dict[int, list[dict]] = {}
+    attempt = 1
+    last_order = -1
+
+    for failure in failures:
+        order = step_order.get(failure["step"], len(step_order))
+        if grouped and order <= last_order:
+            attempt += 1
+        grouped.setdefault(attempt, []).append(failure)
+        last_order = order
+
+    return [
+        {"attempt": attempt_no, "failures": grouped[attempt_no]}
+        for attempt_no in sorted(grouped)
+    ]
+
+
+def _has_valid_formatting_results(
+    supa_client: Client,
+    *,
+    institution: str | None,
+    existing_results: dict[str, dict] | None = None,
+) -> bool:
+    """Return True when formatting rows exist for all active steps and match current schemas."""
+    results = existing_results or {}
+    for step_name in ACTIVE_STEPS:
+        row = results.get(step_name)
+        if row is None:
+            return False
+        _, schema, _ = load_step(step_name, institution=institution)
+        try:
+            validate_output(row.get("content"), schema, step_name)
+        except Exception:
+            return False
+    return True
+
+
+def run_formatting(
+    doc_id: str,
+    supa_client: Client,
+    *,
+    force: bool = False,
+) -> dict:
     """
     Run all ACTIVE_STEPS for doc_id. Each step loads its own provider from config.json.
-    Skips if all steps already completed. Soft-fails on per-step schema errors.
+    Skips if all steps already completed unless force=True.
+    Soft-fails on per-step schema errors.
     Fetches institution from bronze_mapping and passes to steps.
     Multi-chunk OCR: concatenates all chunks sorted by page range.
     Returns dict with keys: status ("skipped"|"done"), completed_steps, failed_steps.
@@ -120,59 +267,64 @@ def run_formatting(doc_id: str, supa_client: Client) -> dict:
     if pipeline_row is None:
         raise ValueError(f"No pipeline row for doc_id={doc_id}")
 
-    already_done = (
-        pipeline_row.get("last_formatting") is not None
-        and pipeline_row.get("formatting_nb", 0) == len(ACTIVE_STEPS)
-    )
-    if already_done:
-        return {"status": "skipped", "completed_steps": 0, "failed_steps": 0, "failed_details": []}
+    # Fetch institution from bronze_mapping early because validity checks may depend on company prompts/schemas.
+    bronze_row = get_bronze_row(supa_client, doc_id)
+    institution = bronze_row.get("institution") if bronze_row else None
+    existing_formatting = get_formatting_results(supa_client, doc_id)
 
+    has_valid_results = _has_valid_formatting_results(
+        supa_client,
+        institution=institution,
+        existing_results=existing_formatting,
+    )
+    if has_valid_results and not force:
+        return {"status": "skipped", "completed_steps": 0, "failed_steps": 0, "failed_details": []}
     attempts = increment_formatting_attempts(supa_client, doc_id)
-    if attempts > MAX_FORMATTING_ATTEMPTS:
-        return {
-            "status": "skipped",
-            "completed_steps": 0,
-            "failed_steps": 0,
-            "failed_details": [{"step": "all", "reason": f"exceeded max attempts ({MAX_FORMATTING_ATTEMPTS})"}],
-        }
 
     # Fetch OCR chunks and concatenate
     ocr_chunks = get_ocr_chunks(supa_client, doc_id)
     if not ocr_chunks:
         raise ValueError(f"No OCR results for doc_id={doc_id}; run OCR first")
+    if existing_formatting:
+        delete_formatting_results(supa_client, doc_id)
     ocr_text = "\n\n".join(chunk["content"] for chunk in ocr_chunks)
+    ocr_by_page = {chunk.get("page_number"): chunk["content"] for chunk in ocr_chunks}
 
-    # Fetch institution from bronze_mapping
-    bronze_row = get_bronze_row(supa_client, doc_id)
-    institution = bronze_row.get("institution") if bronze_row else None
-
-    # Fetch scout results (empty dict means scout hasn't run — fall back to full text)
-    scout_results = get_scout_results(supa_client, doc_id)
-    total_pages = get_total_pages(ocr_text)
+    scout_has_run = pipeline_row.get("last_scout") is not None
+    scout_scores = get_scout_page_scores(supa_client, doc_id) if scout_has_run else []
+    scout_scores_by_step: dict[str, list[dict]] = {}
+    for row in scout_scores:
+        scout_scores_by_step.setdefault(row["step_name"], []).append(row)
 
     completed_steps = 0
     failed_steps = 0
     failed_details: list[dict] = []
     for step_name in ACTIVE_STEPS:
-        if scout_results:
-            if step_name not in scout_results:
-                reason = "no scout page range"
-                append_error(
+        if scout_has_run:
+            shortlisted_pages = [
+                (row["page_number"], ocr_by_page.get(row["page_number"]))
+                for row in scout_scores_by_step.get(step_name, [])
+                if row["score"] >= SCOUT_SCORE_THRESHOLD
+            ]
+            shortlisted_pages = [
+                (page_number, content)
+                for page_number, content in shortlisted_pages
+                if content is not None
+            ]
+            shortlisted_pages.sort(key=lambda item: item[0])
+            if not shortlisted_pages:
+                reason = "no scout pages above threshold"
+                _append_formatting_error(
                     supa_client,
                     doc_id,
-                    f"Scout has no page range for step [{step_name}]; skipping",
+                    attempt=attempts,
+                    step_name=step_name,
+                    reason=reason,
                 )
                 failed_details.append({"step": step_name, "reason": reason})
                 failed_steps += 1
                 continue
-            scout_range = scout_results[step_name]
-            start = max(1, scout_range["start_page"] - SCOUT_PAGE_PADDING)
-            end = min(total_pages or scout_range["end_page"], scout_range["end_page"] + SCOUT_PAGE_PADDING)
-            page_rows = get_ocr_pages_for_range(supa_client, doc_id, start, end)
-            if page_rows:
-                step_ocr_text = "\n\n".join(r["content"] for r in page_rows)
-            else:
-                step_ocr_text = ocr_text  # fallback: full text
+            step_ocr_text = "\n\n".join(content for _, content in shortlisted_pages)
         else:
             step_ocr_text = ocr_text
 
@@ -180,23 +332,54 @@ def run_formatting(doc_id: str, supa_client: Client) -> dict:
             result = run_step(step_name, step_ocr_text, institution=institution)
         except MissingPromptError:
             reason = f"no prompt for institution '{institution}'"
-            append_error(supa_client, doc_id, f"Formatting error [{step_name}]: {reason}")
+            _append_formatting_error(
+                supa_client,
+                doc_id,
+                attempt=attempts,
+                step_name=step_name,
+                reason=reason,
+            )
             failed_details.append({"step": step_name, "reason": reason})
+            failed_steps += 1
+            continue
+        except NonJSONResponseError as exc:
+            reason = f"{exc.provider_name} returned non-JSON"
+            raw_output = exc.raw_response
+            _append_formatting_error(
+                supa_client,
+                doc_id,
+                attempt=attempts,
+                step_name=step_name,
+                reason=reason,
+                raw_output=raw_output,
+            )
+            failure = {"step": step_name, "reason": reason}
+            if debug_logger.is_enabled():
+                failure["raw_output"] = raw_output
+            failed_details.append(failure)
             failed_steps += 1
             continue
         except Exception as exc:
             reason = f"provider error: {exc}"
-            append_error(supa_client, doc_id, f"Formatting error [{step_name}]: {exc}")
+            _append_formatting_error(
+                supa_client,
+                doc_id,
+                attempt=attempts,
+                step_name=step_name,
+                reason=reason,
+            )
             failed_details.append({"step": step_name, "reason": reason})
             failed_steps += 1
             continue
 
         if result is None:
             reason = "schema validation failed after retry"
-            append_error(
+            _append_formatting_error(
                 supa_client,
                 doc_id,
-                f"Formatting step [{step_name}]: output failed schema validation after retry",
+                attempt=attempts,
+                step_name=step_name,
+                reason=reason,
             )
             failed_details.append({"step": step_name, "reason": reason})
             failed_steps += 1

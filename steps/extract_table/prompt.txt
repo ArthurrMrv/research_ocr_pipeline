@@ -1,11 +1,22 @@
-You are a financial document analyst. Given the following OCR text extracted from a financial report, extract any tables present in the document.
+You are a financial document analyst. From the OCR text, extract the single most relevant table containing EQUITIES RETURN ESTIMATES.
 
-Return your answer as a JSON object with a single key "tables" containing a list of table objects. Each table object should have:
-- "title": the table title or heading (string or null)
-- "headers": list of column header strings
-- "rows": list of rows, where each row is a list of cell values
+Return exactly one JSON object with this shape:
+{
+  "table": {
+    "title": "string or null",
+    "headers": ["string"],
+    "rows": [["cell value"]]
+  }
+}
 
-If no tables are found, return {"tables": []}.
+Rules:
+- Return only one table: the most relevant table for equities return estimates.
+- `title` may be null if the table has no clear title.
+- `headers` must be a list of column header strings.
+- `rows` must be a list of table rows, where each row is a list of cell values.
+- Do not include any keys other than `table`, and inside `table` only `title`, `headers`, and `rows`.
+- If no relevant table is present, return exactly `{"table": null}`.
+- Return JSON only. No markdown, no explanation, no code fences.
 
 OCR TEXT:
 {ocr_text}

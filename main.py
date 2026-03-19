@@ -20,7 +20,7 @@ from rich.progress import (
 )
 
 from pipeline.formatting import run_formatting
-from pipeline.ingest import ingest
+from pipeline.ingest import ingest, make_doc_id
 from pipeline.ocr import run_ocr
 from pipeline.scout import run_scout
 from pipeline.tracker import get_all_doc_ids, get_bronze_row, get_supabase_client
@@ -118,7 +118,7 @@ def _run_ocr_step(
     all_ids: list[str],
     doc_labels: dict[str, str],
     supa,
-    parse_all: bool,
+    force: bool,
     parse_date: str | None,
 ) -> None:
     """OCR step with batch sub-progress."""
@@ -151,7 +151,7 @@ def _run_ocr_step(
             try:
                 result = run_ocr(
                     doc_id, supa,
-                    force=parse_all,
+                    force=force,
                     since=parse_date,
                     progress_callback=_batch_cb,
                 )
@@ -203,12 +203,15 @@ def _run_formatting_step(
     all_ids: list[str],
     doc_labels: dict[str, str],
     supa,
+    *,
+    force: bool = False,
 ) -> None:
     """Formatting step with warnings for failed steps."""
     console.rule("[cyan bold]FORMATTING")
+    from pipeline import debug_logger
 
     errors: list[tuple[str, str]] = []
-    warnings: list[tuple[str, list[dict]]] = []
+    warnings: list[tuple[str, list[dict], list[dict]]] = []
     processed = skipped = 0
     step_start = time.monotonic()
 
@@ -222,11 +225,12 @@ def _run_formatting_step(
             label = doc_labels[doc_id]
             progress.update(task_id, description=f"[cyan]formatting[/cyan]  {label}")
             try:
-                result = run_formatting(doc_id, supa)
+                result = run_formatting(doc_id, supa, force=force)
                 status = result["status"]
                 failed_details = result.get("failed_details", [])
-                if failed_details:
-                    warnings.append((label, failed_details))
+                attempt_history = result.get("attempt_history", [])
+                if failed_details or attempt_history:
+                    warnings.append((label, failed_details, attempt_history))
             except Exception as exc:
                 status = "error"
                 errors.append((label, str(exc)))
@@ -260,16 +264,37 @@ def _run_formatting_step(
 
     if warnings:
         warn_parts: list[str] = []
-        for lbl, details in warnings:
+        for lbl, details, attempt_history in warnings:
             warn_parts.append(f"  [bold]{lbl}[/bold]:")
             for d in details:
-                warn_parts.append(f"    {d['step']}: {d['reason']}")
+                _append_formatting_failure_lines(warn_parts, d, indent="    ", debug=debug_logger.is_enabled())
+            if debug_logger.is_enabled() and attempt_history:
+                for attempt in attempt_history:
+                    warn_parts.append(f"    attempt {attempt['attempt']}:")
+                    for failure in attempt["failures"]:
+                        _append_formatting_failure_lines(warn_parts, failure, indent="      ", debug=True)
         console.print(Panel("\n".join(warn_parts), title="[yellow]Failed formatting steps", border_style="yellow"))
+
+
+def _append_formatting_failure_lines(
+    parts: list[str],
+    failure: dict,
+    *,
+    indent: str,
+    debug: bool,
+) -> None:
+    """Render one formatting failure entry, including full raw output in debug mode."""
+    parts.append(f"{indent}{failure['step']}: {failure['reason']}")
+    raw_output = failure.get("raw_output")
+    if debug and isinstance(raw_output, str):
+        parts.append(f"{indent}raw output:")
+        for line in raw_output.splitlines() or [""]:
+            parts.append(f"{indent}  {line}")
 
 
 @click.command()
 @click.argument("pdf_path", type=click.Path(exists=True))
-@click.option("--parse-all", is_flag=True, help="Re-process all documents.")
+@click.option("--parse-all", is_flag=True, help="Force re-process all selected pipeline steps.")
 @click.option(
     "--parse-date",
     type=str,
@@ -282,12 +307,20 @@ def _run_formatting_step(
     multiple=True,
     help="Run only specific pipeline step(s). Omit to run all.",
 )
+@click.option(
+    "--force",
+    "force_steps",
+    type=click.Choice(["ingest", "ocr", "scout", "formatting"]),
+    multiple=True,
+    help="Force re-run specific pipeline step(s). Repeat as needed.",
+)
 @click.option("--debug", is_flag=True, help="Print full LLM responses and per-page OCR status.")
 def run(
     pdf_path: str,
     parse_all: bool,
     parse_date: str | None,
     step: tuple[str, ...],
+    force_steps: tuple[str, ...],
     debug: bool,
 ) -> None:
     """Run the ingestion pipeline on PDF_PATH (a single PDF file or a directory of PDFs)."""
@@ -300,14 +333,19 @@ def run(
         debug_logger.enable()
 
     steps_to_run = set(step) if step else set(ALL_STEPS)
+    forced_steps = set(force_steps)
+    if parse_all:
+        forced_steps = set(ALL_STEPS)
 
     # Resolve single file vs directory
     if os.path.isfile(pdf_path):
         pdfs = [pdf_path]
         single_file_basename: str | None = os.path.basename(pdf_path)
+        single_file_doc_id: str | None = make_doc_id(pdf_path)
     else:
         pdfs = glob(f"{pdf_path}/*.pdf")
         single_file_basename = None
+        single_file_doc_id = None
 
     # Banner
     console.rule("[cyan bold]Ingestion Pipeline")
@@ -321,6 +359,8 @@ def run(
         console.print(f"  [dim]Mode         [/dim] : re-process since {parse_date}")
     else:
         console.print("  [dim]Mode         [/dim] : incremental (skip already-done)")
+    if forced_steps and not parse_all:
+        console.print(f"  [dim]Force steps  [/dim] : {', '.join(s for s in ALL_STEPS if s in forced_steps)}")
 
     # --- INGEST ---
     if "ingest" in steps_to_run:
@@ -343,17 +383,17 @@ def run(
         for did in all_ids:
             doc_labels[did] = _doc_label(supa, did)
 
-    if single_file_basename:
-        all_ids = [did for did in all_ids if doc_labels[did] == single_file_basename]
+    if single_file_doc_id:
+        all_ids = [did for did in all_ids if did == single_file_doc_id]
         if not all_ids:
-            console.print(f"[red]No document registered for '{single_file_basename}'[/red]")
+            console.print(f"[red]No document registered for '{single_file_basename}' at '{pdf_path}'[/red]")
             return
 
     console.print(f"  Total documents: [bold]{len(all_ids)}[/bold]")
 
     # --- OCR ---
     if "ocr" in steps_to_run:
-        _run_ocr_step(all_ids, doc_labels, supa, parse_all, parse_date)
+        _run_ocr_step(all_ids, doc_labels, supa, "ocr" in forced_steps, parse_date)
 
     # --- SCOUT ---
     if "scout" in steps_to_run:
@@ -361,12 +401,12 @@ def run(
             "scout",
             all_ids,
             doc_labels,
-            lambda doc_id: run_scout(doc_id, supa, force=parse_all),
+            lambda doc_id: run_scout(doc_id, supa, force="scout" in forced_steps),
         )
 
     # --- FORMATTING ---
     if "formatting" in steps_to_run:
-        _run_formatting_step(all_ids, doc_labels, supa)
+        _run_formatting_step(all_ids, doc_labels, supa, force="formatting" in forced_steps)
 
     # Final summary
     total_elapsed = time.monotonic() - pipeline_start

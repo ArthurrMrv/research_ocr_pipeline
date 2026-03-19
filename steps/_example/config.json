@@ -1,4 +1,5 @@
 {
+  "definition": "Describe what page-level evidence indicates this extraction step is relevant",
   "provider": "moonshot",
   "model": "kimi-k2.5",
   "temperature": 0,

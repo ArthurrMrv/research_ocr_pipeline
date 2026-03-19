@@ -5,15 +5,20 @@ import pytest
 from pipeline.tracker import (
     append_error,
     bronze_insert,
+    bronze_update_path,
     delete_ocr_rows,
+    delete_scout_page_scores,
     formatting_upsert,
     get_all_doc_ids,
     get_bronze_row,
+    get_formatting_results,
     get_ocr_chunks,
+    get_scout_page_scores,
     get_supabase_client,
     pipeline_get,
     pipeline_insert,
     pipeline_update,
+    scout_page_score_upsert,
     silver_upsert,
 )
 
@@ -94,6 +99,15 @@ class TestPipelineInsert:
         client.table().insert.assert_called_with({"doc_id": "doc1"})
 
 
+class TestBronzeUpdatePath:
+    def test_updates_file_path(self):
+        client = _make_client()
+        bronze_update_path(client, "doc1", "/new/path/file.pdf")
+        client.table.assert_called_with("bronze_mapping")
+        client.table().update.assert_called_with({"file_path": "/new/path/file.pdf"})
+        client.table().update().eq.assert_called_with("doc_id", "doc1")
+
+
 class TestPipelineGet:
     def test_returns_row_when_found(self):
         row = {"doc_id": "doc1", "last_ocr": None}
@@ -123,7 +137,7 @@ class TestSilverUpsert:
         row = {"doc_id": "doc1", "ocr_model": "test-model", "content": "text"}
         silver_upsert(client, "ocr_results", row)
         client.table.assert_called_with("ocr_results")
-        client.table().upsert.assert_called_with(row)
+        client.table().upsert.assert_called_with(row, on_conflict=None)
 
 
 class TestFormattingUpsert:
@@ -137,7 +151,36 @@ class TestFormattingUpsert:
         }
         formatting_upsert(client, row)
         client.table.assert_called_with("formatting")
-        client.table().upsert.assert_called_with(row)
+        client.table().upsert.assert_called_with(row, on_conflict="doc_id,step_name")
+
+
+class TestGetFormattingResults:
+    def test_returns_rows_by_step_name(self):
+        client = _make_client(data=[
+            {"doc_id": "doc1", "step_name": "extract_model_name", "content": {"models": []}},
+            {"doc_id": "doc1", "step_name": "extract_table", "content": {"tables": []}},
+        ])
+        result = get_formatting_results(client, "doc1")
+        assert set(result) == {"extract_model_name", "extract_table"}
+        assert result["extract_table"]["content"] == {"tables": []}
+
+
+class TestScoutPageScoreUpsert:
+    def test_upserts_scout_page_score_row(self):
+        client = _make_client()
+        row = {
+            "doc_id": "doc1",
+            "step_name": "extract_table",
+            "page_number": 3,
+            "score": 0.82,
+            "scout_model": "gemini-test",
+        }
+        scout_page_score_upsert(client, row)
+        client.table.assert_called_with("scout_page_scores")
+        client.table().upsert.assert_called_with(
+            row,
+            on_conflict="doc_id,step_name,page_number",
+        )
 
 
 class TestAppendError:
@@ -165,6 +208,15 @@ class TestAppendError:
         client = _make_client(data=[])
         append_error(client, "missing", "error")
         client.table().update.assert_not_called()
+
+    def test_appends_error_with_context(self):
+        row = {"doc_id": "doc1", "error": []}
+        client = _make_client(data=[row])
+        append_error(client, "doc1", "Formatting failed", context={"stage": "formatting", "attempt": 1})
+        update_call = client.table().update.call_args
+        updated_error = update_call[0][0]["error"]
+        assert updated_error[0]["stage"] == "formatting"
+        assert updated_error[0]["attempt"] == 1
 
 
 class TestGetAllDocIds:
@@ -217,3 +269,29 @@ class TestDeleteOcrRows:
         client.table.assert_called_with("ocr_results")
         client.table().delete.assert_called_once()
         client.table().delete().eq.assert_called_with("doc_id", "doc1")
+
+
+class TestDeleteScoutPageScores:
+    def test_calls_delete_with_doc_id(self):
+        client = _make_client()
+        delete_scout_page_scores(client, "doc1")
+        client.table.assert_called_with("scout_page_scores")
+        client.table().delete.assert_called_once()
+        client.table().delete().eq.assert_called_with("doc_id", "doc1")
+
+
+class TestGetScoutPageScores:
+    def test_returns_sorted_scores(self):
+        data = [
+            {"doc_id": "doc1", "step_name": "extract_table", "page_number": 3, "score": 0.8},
+            {"doc_id": "doc1", "step_name": "extract_model_name", "page_number": 2, "score": 0.4},
+            {"doc_id": "doc1", "step_name": "extract_model_name", "page_number": 1, "score": 0.9},
+        ]
+        client = _make_client(data=data)
+        result = get_scout_page_scores(client, "doc1")
+        assert [row["page_number"] for row in result] == [1, 2, 3]
+
+    def test_returns_empty_list_when_none(self):
+        client = _make_client(data=[])
+        result = get_scout_page_scores(client, "doc1")
+        assert result == []

@@ -1,29 +1,34 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["tables"],
+  "required": ["table"],
   "properties": {
-    "tables": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["headers", "rows"],
-        "properties": {
-          "title": { "type": ["string", "null"] },
-          "headers": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "rows": {
-            "type": "array",
-            "items": {
+    "table": {
+      "description": "Table with EQUITIES RETURN ESTIMATES, or null if no relevant table is present.",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["headers", "rows"],
+          "properties": {
+            "title": { "type": ["string", "null"] },
+            "headers": {
               "type": "array",
-              "items": {}
+              "items": { "type": "string" }
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {}
+              }
             }
-          }
+          },
+          "additionalProperties": false
         },
-        "additionalProperties": false
-      }
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "additionalProperties": false
