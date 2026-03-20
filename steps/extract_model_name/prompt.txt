@@ -15,12 +15,12 @@ Return exactly one JSON object with this shape:
 Rules:
 - Focus specifically on the U.S. equity return forecast approach and assumptions.
 - Use ONLY information explicitly stated in the report. Do not infer or import outside knowledge.
-- `model_name` must use the exact wording used in the report when available. Do not shorten, normalize, or invent abbreviations. For example, if the report says "Capital Market Model", do not return "CMA".
-- `notes_model` is optional. When present, make it a short description summarizing the approach.
-- `steps_summary` must be a concise summary of the whole approach.
-- `steps_detailed` must be a more detailed summary of the whole approach.
-- `variables` must be a flat list of strings.
-- `variables_important` is optional. When present, include only the factors explicitly highlighted as important in the report. If the report does not distinguish a special narrative, use the important factors already mentioned in `variables` rather than inventing new ones.
+- `model_name` must use the exact wording used in the report when available. Do not shorten, normalize, invent, or invent abbreviations. For example, if the report says "Capital Market Model", do not return "CMA".
+- `notes_model` is optional. When present, make it an extremely short list of key words summarizing the approach.
+- `steps_summary` must be a concise summary of the whole approach. 
+- `steps_detailed` must be a more detailed summary of the whole approach and must explicitly include all stated assumptions, constraints, and conditions relevant to the U.S. equity return forecast. Present it as an ordered step list using '\n(stepNumber)'.
+- `variables` must be the primitive variables. Must be a flat list of strings. Do not shorten, normalize, or invent names, strictly quote.
+- `variables_important` is optional. When present, include only the factors explicitly highlighted as very important in the report. If the report does not distinguish a special narrative, use the important factors already mentioned in `variables` rather than inventing new ones.
 - `mermaid_diagram` must be a Mermaid flowchart string.
 - The diagram should show the flow from initial variables or risk factors, through any explicit intermediary calculations, decomposition steps, or checks, to the final U.S. equity return output.
 - If intermediary steps are not explicitly given, use a simple direct flow from inputs to final output.

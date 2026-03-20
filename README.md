@@ -104,7 +104,7 @@ Each page gets one score per active step. Formatting keeps only pages at or abov
 ## Stage 4 — Formatting (Surgeon)
 
 **Input:** OCR text + scout page scores
-**Output:** Rows in `formatting` (one per active step)
+**Output:** Rows in `formatting` (one per active step), including the structured `content` and the exact `pages_given` to the model
 
 ```mermaid
 flowchart TD
@@ -118,7 +118,7 @@ flowchart TD
     D & H --> I[run_step\nLLM extraction]
     I --> J{Schema\nvalid?}
     J -- Fail x2 --> K[append_error\nskip]
-    J -- Pass --> L[Upsert formatting\ndoc_id · step_name · content]
+    J -- Pass --> L[Upsert formatting\ndoc_id · step_name · pages_given · content]
     L --> M[Update pipeline.last_formatting]
 ```
 
@@ -220,6 +220,7 @@ erDiagram
         text doc_id FK
         text step_name
         text formatting_model
+        int[] pages_given
         jsonb content
     }
 
@@ -354,7 +355,7 @@ ingestion_pipeline_reports/
 | `pipeline` | Silver | Per-document processing state (`last_ocr`, `last_scout`, `last_formatting`, `error`) |
 | `ocr_results` | Silver | OCR text per document page |
 | `scout_page_scores` | Silver | Relevance score per document, step, and page |
-| `formatting` | Gold | Structured JSON output per document per step |
+| `formatting` | Gold | Structured JSON output per document per step, plus the exact pages passed to the model |
 
 ---
 

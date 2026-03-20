@@ -251,6 +251,15 @@ def _has_valid_formatting_results(
     return True
 
 
+def _sorted_page_numbers(rows: list[dict]) -> list[int]:
+    """Return sorted page numbers, skipping rows without a page_number."""
+    return sorted(
+        row["page_number"]
+        for row in rows
+        if isinstance(row.get("page_number"), int)
+    )
+
+
 def run_formatting(
     doc_id: str,
     supa_client: Client,
@@ -291,6 +300,7 @@ def run_formatting(
         delete_formatting_results(supa_client, doc_id)
     ocr_text = "\n\n".join(chunk["content"] for chunk in ocr_chunks)
     ocr_by_page = {chunk.get("page_number"): chunk["content"] for chunk in ocr_chunks}
+    all_pages_given = _sorted_page_numbers(ocr_chunks)
 
     scout_has_run = pipeline_row.get("last_scout") is not None
     scout_scores = get_scout_page_scores(supa_client, doc_id) if scout_has_run else []
@@ -327,8 +337,10 @@ def run_formatting(
                 failed_steps += 1
                 continue
             step_ocr_text = "\n\n".join(content for _, content in shortlisted_pages)
+            pages_given = [page_number for page_number, _ in shortlisted_pages]
         else:
             step_ocr_text = ocr_text
+            pages_given = all_pages_given
 
         try:
             result, model_name = run_step(step_name, step_ocr_text, institution=institution)
@@ -392,7 +404,8 @@ def run_formatting(
             {
                 "doc_id": doc_id,
                 "step_name": step_name,
-                "formatting_model": model_name,
+                "formatting_model": config["model"],
+                "pages_given": pages_given,
                 "content": result,
             },
         )

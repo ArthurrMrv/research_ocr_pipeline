@@ -264,6 +264,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.run_step", return_value=({"result": "rerun"}, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.delete_formatting_results") as mock_delete,
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             result = run_formatting("doc1", client, force=True)
 
@@ -290,6 +291,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             result = run_formatting("doc1", client)
 
@@ -308,6 +310,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")),
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.formatting_upsert") as mock_upsert,
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             run_formatting("doc1", client)
 
@@ -315,6 +318,7 @@ class TestRunFormatting:
         for call in mock_upsert.call_args_list:
             row = call[0][1]
             assert row["content"] == step_result
+            assert row["pages_given"] == [1]
 
     def test_raises_if_no_pipeline_row(self):
         client = self._make_client(pipeline_row=None)
@@ -340,6 +344,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             result = run_formatting("doc1", client)
 
@@ -360,6 +365,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.run_step", return_value=(None, "kimi-k2.5")),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.append_error") as mock_err,
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             result = run_formatting("doc1", client)
 
@@ -442,6 +448,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
             patch("pipeline.formatting.SCOUT_SCORE_THRESHOLD", 0.5),
+            patch("pipeline.formatting.formatting_upsert") as mock_upsert,
         ):
             run_formatting("doc1", client)
 
@@ -455,6 +462,30 @@ class TestRunFormatting:
         table_text = dict(received_texts)["extract_table"]
         assert "Results table" in table_text
         assert "Model specs" not in table_text
+        pages_by_step = {call[0][1]["step_name"]: call[0][1]["pages_given"] for call in mock_upsert.call_args_list}
+        assert pages_by_step["extract_model_name"] == [2]
+        assert pages_by_step["extract_table"] == [3]
+
+    def test_full_ocr_fallback_persists_all_pages_given(self, tmp_path):
+        pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
+        ocr_chunks = [
+            {"page_number": 2, "content": "--- Page 2 ---\nchunk2"},
+            {"page_number": 5, "content": "--- Page 5 ---\nchunk5"},
+        ]
+        bronze_row = {"doc_id": "doc1", "institution": None}
+        client = self._make_client(pipeline_row, ocr_chunks, bronze_row, scout_scores=[])
+        step_result = {"result": "ok"}
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.run_step", return_value=step_result),
+            patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
+            patch("pipeline.formatting.formatting_upsert") as mock_upsert,
+        ):
+            run_formatting("doc1", client)
+
+        for call in mock_upsert.call_args_list:
+            assert call[0][1]["pages_given"] == [2, 5]
 
     def test_skips_step_when_scout_has_no_range(self, tmp_path):
         """When scout ran but shortlisted no pages, append error and skip that step."""
@@ -476,6 +507,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
             patch("pipeline.formatting.SCOUT_SCORE_THRESHOLD", 0.5),
             patch("pipeline.formatting.append_error") as mock_err,
+            patch("pipeline.formatting.formatting_upsert") as mock_upsert,
         ):
             run_formatting("doc1", client)
 
@@ -483,6 +515,8 @@ class TestRunFormatting:
         assert mock_step.call_count == 1
         mock_err.assert_called_once()
         assert "extract_table" in mock_err.call_args[0][2]
+        assert mock_upsert.call_count == 1
+        assert mock_upsert.call_args[0][1]["step_name"] == "extract_model_name"
 
     def test_failed_details_contains_provider_error(self, tmp_path):
         """Provider exceptions produce failed_details with 'provider error: ...' reason."""
@@ -496,6 +530,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.run_step", side_effect=RuntimeError("429 Too Many Requests")),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.append_error"),
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             result = run_formatting("doc1", client)
 
@@ -515,6 +550,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.run_step", side_effect=NonJSONResponseError("Gemini", "{\n  \"a\": 1\n}\ntrailing")),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.debug_logger.is_enabled", return_value=True),
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             result = run_formatting("doc1", client)
 
@@ -534,6 +570,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.run_step", side_effect=MissingPromptError("step1", "Unknown")),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.append_error"),
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             result = run_formatting("doc1", client)
 
@@ -586,6 +623,7 @@ class TestRunFormatting:
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.increment_formatting_attempts", return_value=4) as mock_increment,
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             result = run_formatting("doc1", client)
 

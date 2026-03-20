@@ -56,10 +56,11 @@ SCOUT_SCORE_THRESHOLD=0.6
 
 ## 3. Database schema
 
-The schema is already applied to the Supabase project. If you need to re-apply it (e.g. for a fresh project), run the migration SQL from the plan or use the Supabase dashboard SQL editor:
+The schema is already applied to the Supabase project. If you need to re-apply it (e.g. for a fresh project), run `schema_changes.sql` or use the Supabase dashboard SQL editor:
 
 ```sql
--- Apply schema_changes.sql for the page-score scout table
+-- Apply schema_changes.sql for the latest pipeline schema updates,
+-- including scout page scores and formatting.pages_given
 ```
 
 ---

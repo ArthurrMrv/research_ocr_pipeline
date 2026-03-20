@@ -147,6 +147,7 @@ class TestFormattingUpsert:
             "doc_id": "doc1",
             "step_name": "extract_model_name",
             "formatting_model": "kimi-k2.5",
+            "pages_given": [2, 5],
             "content": {"model_name": "test"},
         }
         formatting_upsert(client, row)
@@ -157,12 +158,13 @@ class TestFormattingUpsert:
 class TestGetFormattingResults:
     def test_returns_rows_by_step_name(self):
         client = _make_client(data=[
-            {"doc_id": "doc1", "step_name": "extract_model_name", "content": {"models": []}},
-            {"doc_id": "doc1", "step_name": "extract_table", "content": {"tables": []}},
+            {"doc_id": "doc1", "step_name": "extract_model_name", "pages_given": [1, 2], "content": {"models": []}},
+            {"doc_id": "doc1", "step_name": "extract_table", "pages_given": [3], "content": {"tables": []}},
         ])
         result = get_formatting_results(client, "doc1")
         assert set(result) == {"extract_model_name", "extract_table"}
         assert result["extract_table"]["content"] == {"tables": []}
+        assert result["extract_model_name"]["pages_given"] == [1, 2]
 
 
 class TestScoutPageScoreUpsert:

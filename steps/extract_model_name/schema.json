@@ -16,7 +16,7 @@
     },
     "notes_model": {
       "type": "string",
-      "description": "Optional short description summarizing the approach."
+      "description": "Optional extremely short list of key words summarizing the approach."
     },
     "steps_summary": {
       "type": "string",
@@ -24,11 +24,11 @@
     },
     "steps_detailed": {
       "type": "string",
-      "description": "More detailed summary of the end-to-end U.S. equity forecast approach and assumptions."
+      "description": "More detailed summary of the end-to-end U.S. equity forecast approach that explicitly includes all stated assumptions, constraints, and conditions relevant to the U.S. equity return forecast."
     },
     "variables": {
       "type": "array",
-      "description": "Flat list of variables, inputs, and factors used by the model.",
+      "description": "Flat list of variables, inputs, ensure these are the primary variable and they are used by the model for U.S. equity return forecast.",
       "items": { "type": "string" }
     },
     "variables_important": {

@@ -1,0 +1,25 @@
+{
+    "variables": [
+      "inflation",
+      "real GDP growth",
+      "short term interest rates",
+      "currency rates",
+      "real earnings growth",
+      "income return",
+      "dividend yield",
+      "valuation adjustments",
+      "currency adjustments"
+    ],
+    "model_name": "building-block approach",
+    "sub_models": [
+      "macroeconomic projections"
+    ],
+    "notes_model": "A methodology that aggregates macroeconomic projections, earnings growth, income, and valuation adjustments across multiple probability-weighted economic scenarios to generate expected returns.",
+    "steps_summary": "The approach projects macroeconomic variables under four scenarios, derives real earnings growth from real GDP growth, estimates dividend yields, and aggregates these with inflation and valuation adjustments. The final expected return is a probability-weighted average of the scenario outcomes.",
+    "steps_detailed": "1. Develop macroeconomic projections (inflation, real GDP growth, short-term interest rates, and currency rates) under four economic scenarios: Good Recovery, Overheating, Tight Money, and Bad Recovery. 2. Estimate real corporate earnings growth by assuming it will be consistent with regional real GDP growth projections. 3. Project dividend yields using a blend of historical average yields and current market yields. 4. Establish the primary equity building blocks: inflation, real earnings growth, and income return. 5. Apply adjustments for valuation and currency shifts based on the four macroeconomic scenarios. 6. Calculate the total expected return for each scenario by summing these building block components. 7. Apply probability weights to the scenario returns to generate the final expected U.S. equity return.",
+    "mermaid_diagram": "flowchart TD\n    A[Macroeconomic Scenarios] --> B[Inflation]\n    A --> C[Real GDP Growth]\n    C --> D[Real Earnings Growth]\n    E[Historical & Current Yields] --> F[Income Return / Dividend Yield]\n    A --> G[Valuation Adjustments]\n    A --> H[Currency Adjustments]\n    B --> I[Scenario Expected Return]\n    D --> I\n    F --> I\n    G --> I\n    H --> I\n    I --> J[Probability Weighting]\n    J --> K[Final U.S. Equity Expected Return]",
+    "variables_important": [
+      "inflation",
+      "real GDP growth"
+    ]
+  }
