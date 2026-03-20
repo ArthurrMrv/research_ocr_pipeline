@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+import os
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Callable, TypeVar
+from typing import Callable, TypeVar
 
+from openai import OpenAI
 from pipeline import debug_logger
 
 _T = TypeVar("_T")
@@ -55,3 +58,39 @@ class LLMProvider(ABC):
     def _non_json_error(self, provider_name: str, raw: str) -> NonJSONResponseError:
         """Build a structured non-JSON error that keeps the full raw response."""
         return NonJSONResponseError(provider_name, raw)
+
+
+class OpenAICompatibleProvider(LLMProvider):
+    """Shared base for providers that use the OpenAI SDK with a custom base_url."""
+
+    _provider_label: str  # e.g. "Moonshot", "Gemini"
+    _base_url: str | None = None  # None means default OpenAI endpoint
+    _env_var: str  # e.g. "MOONSHOT_API_KEY"
+
+    def __init__(self, step_config: dict) -> None:
+        super().__init__(step_config)
+        api_key = os.environ[self._env_var]
+        kwargs: dict = {"api_key": api_key}
+        if self._base_url is not None:
+            kwargs["base_url"] = self._base_url
+        self._client = OpenAI(**kwargs)
+
+    def call(self, prompt: str, ocr_text: str) -> dict:
+        filled = prompt.replace("{ocr_text}", ocr_text)
+        response = self._call_with_retry(
+            lambda: self._client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": filled}],
+                response_format={"type": "json_object"},
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            )
+        )
+        raw = response.choices[0].message.content
+        try:
+            result = json.loads(raw)
+            debug_logger.print_llm_response(f"{self._provider_label} / {self.model}", raw, result)
+            return result
+        except json.JSONDecodeError as exc:
+            debug_logger.print_llm_response(f"{self._provider_label} / {self.model}", raw)
+            raise self._non_json_error(self._provider_label, raw) from exc

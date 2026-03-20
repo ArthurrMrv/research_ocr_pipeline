@@ -101,30 +101,32 @@ def validate_output(result: dict, schema: dict, step_name: str) -> None:
 
 def run_step(
     step_name: str, ocr_text: str, *, institution: str | None = None
-) -> dict | None:
+) -> tuple[dict | None, str]:
     """
     Load step config, dispatch to provider, validate output against schema.
-    Retries once on validation failure. Returns None on second failure (soft-fail).
-    Returns None if prompt_text is None (missing company-specific prompt).
+    Retries once on validation failure. Returns (None, model) on second failure (soft-fail).
+    Returns (result, model) on success.
+    Raises MissingPromptError if prompt_text is None.
     """
     prompt_text, schema, config = load_step(step_name, institution=institution)
     if prompt_text is None:
         raise MissingPromptError(step_name, institution)
     provider_name = config["provider"]
     provider = get_provider(provider_name, config)
+    model = config["model"]
 
     for attempt in range(2):
         debug_logger.print_step_start(step_name)
         result = provider.call(prompt_text, ocr_text)
         try:
             validate_output(result, schema, step_name)
-            return result
+            return result, model
         except jsonschema.ValidationError:
             if attempt == 1:
-                return None
+                return None, model
             # retry once
 
-    return None  # unreachable, satisfies type checker
+    return None, model  # unreachable, satisfies type checker
 
 
 def _append_formatting_error(
@@ -244,7 +246,7 @@ def _has_valid_formatting_results(
         _, schema, _ = load_step(step_name, institution=institution)
         try:
             validate_output(row.get("content"), schema, step_name)
-        except Exception:
+        except (jsonschema.ValidationError, ValueError):
             return False
     return True
 
@@ -329,7 +331,7 @@ def run_formatting(
             step_ocr_text = ocr_text
 
         try:
-            result = run_step(step_name, step_ocr_text, institution=institution)
+            result, model_name = run_step(step_name, step_ocr_text, institution=institution)
         except MissingPromptError:
             reason = f"no prompt for institution '{institution}'"
             _append_formatting_error(
@@ -385,13 +387,12 @@ def run_formatting(
             failed_steps += 1
             continue
 
-        _, _, config = load_step(step_name, institution=institution)
         formatting_upsert(
             supa_client,
             {
                 "doc_id": doc_id,
                 "step_name": step_name,
-                "formatting_model": config["model"],
+                "formatting_model": model_name,
                 "content": result,
             },
         )

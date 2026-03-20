@@ -51,7 +51,7 @@ class TestCli:
             patch("main.ingest", return_value=[]),
             patch("main.get_all_doc_ids", return_value=["target-doc", "stale-doc"]),
             patch("main.make_doc_id", return_value="target-doc"),
-            patch("main._doc_label", side_effect=["JPMorgan_20170930.pdf", "JPMorgan_20170930.pdf"]),
+            patch("main._build_doc_labels", return_value={"target-doc": "JPMorgan_20170930.pdf", "stale-doc": "stale.pdf"}),
             patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
             patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,

@@ -79,15 +79,17 @@ class TestRunScout:
                 ],
             ),
             patch("pipeline.scout.get_provider"),
-            patch("pipeline.scout.scout_page_score_upsert") as mock_upsert,
+            patch("pipeline.scout.scout_page_scores_bulk_upsert") as mock_bulk_upsert,
             patch("pipeline.scout.delete_scout_page_scores"),
             patch("pipeline.scout.pipeline_update") as mock_update,
             patch("pipeline.scout.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             run_scout("doc1", client)
 
-        assert mock_upsert.call_count == 2
-        upserted_steps = {call[0][1]["step_name"] for call in mock_upsert.call_args_list}
+        mock_bulk_upsert.assert_called_once()
+        rows = mock_bulk_upsert.call_args[0][1]
+        assert len(rows) == 2
+        upserted_steps = {r["step_name"] for r in rows}
         assert upserted_steps == {"extract_model_name", "extract_table"}
         mock_update.assert_called_once()
 
@@ -111,7 +113,7 @@ class TestRunScout:
                 ],
             ),
             patch("pipeline.scout.get_provider"),
-            patch("pipeline.scout.scout_page_score_upsert"),
+            patch("pipeline.scout.scout_page_scores_bulk_upsert"),
             patch("pipeline.scout.delete_scout_page_scores"),
             patch("pipeline.scout.pipeline_update"),
         ):
@@ -156,7 +158,7 @@ class TestRunScout:
             patch("pipeline.scout.load_step", return_value=step_config),
             patch("pipeline.scout.load_step_config", return_value={"definition": "model evidence"}),
             patch("pipeline.scout.get_provider"),
-            patch("pipeline.scout.scout_page_score_upsert"),
+            patch("pipeline.scout.scout_page_scores_bulk_upsert"),
             patch("pipeline.scout.delete_scout_page_scores"),
             patch("pipeline.scout.pipeline_update"),
             patch("pipeline.scout.ACTIVE_STEPS", ["extract_model_name"]),
@@ -198,7 +200,7 @@ class TestRunScout:
                 },
             ),
             patch("pipeline.scout.get_provider", return_value=MagicMock()),
-            patch("pipeline.scout.scout_page_score_upsert"),
+            patch("pipeline.scout.scout_page_scores_bulk_upsert"),
             patch("pipeline.scout.delete_scout_page_scores"),
             patch("pipeline.scout.pipeline_update"),
             patch("pipeline.scout.ACTIVE_STEPS", ["extract_model_name"]),

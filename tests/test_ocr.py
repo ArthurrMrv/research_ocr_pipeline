@@ -179,15 +179,35 @@ class TestRunOcr:
         bronze_row = self._make_bronze_row(file_path=fixture_pdf)
         client = self._make_client(pipeline_row, bronze_row)
 
-        # Create 100 fake images to simulate a long document
-        fake_images = [Image.new("RGB", (10, 10)) for _ in range(100)]
         mock_provider = MagicMock()
         mock_provider.ocr_document.side_effect = NotImplementedError
         mock_provider.ocr_pages.return_value = "chunk text"
 
+        _real_fitz_open = __import__("fitz").open
+        call_count = [0]
+
+        def _fake_fitz_open(path=None):
+            if path is None:
+                return _real_fitz_open()
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # Fast path: return real doc so provider.ocr_document raises NotImplementedError
+                return _real_fitz_open(path)
+            # Slow path: return mock 100-page doc
+            mock_doc = MagicMock()
+            mock_doc.__len__ = lambda s: 100
+            mock_doc.__enter__ = lambda s: s
+            mock_doc.__exit__ = MagicMock(return_value=False)
+            return mock_doc
+
+        def fake_pdf_to_images(path, start=0, end=None):
+            count = (end or 100) - start
+            return [Image.new("RGB", (10, 10)) for _ in range(count)]
+
         with (
             patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider),
-            patch("pipeline.ocr.pdf_to_images", return_value=fake_images),
+            patch("pipeline.ocr.pdf_to_images", side_effect=fake_pdf_to_images),
+            patch("pipeline.ocr.fitz.open", side_effect=_fake_fitz_open),
             patch("pipeline.ocr.MAX_PAGES_PER_BATCH", 75),
         ):
             run_ocr("doc1", client)
@@ -205,14 +225,33 @@ class TestRunOcr:
         bronze_row = self._make_bronze_row(file_path=fixture_pdf)
         client = self._make_client(pipeline_row, bronze_row)
 
-        fake_images = [Image.new("RGB", (10, 10)) for _ in range(100)]
         mock_provider = MagicMock()
         mock_provider.ocr_document.side_effect = NotImplementedError
         mock_provider.ocr_pages.return_value = "chunk text"
 
+        _real_fitz_open = __import__("fitz").open
+        call_count = [0]
+
+        def _fake_fitz_open(path=None):
+            if path is None:
+                return _real_fitz_open()
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _real_fitz_open(path)
+            mock_doc = MagicMock()
+            mock_doc.__len__ = lambda s: 100
+            mock_doc.__enter__ = lambda s: s
+            mock_doc.__exit__ = MagicMock(return_value=False)
+            return mock_doc
+
+        def fake_pdf_to_images(path, start=0, end=None):
+            count = (end or 100) - start
+            return [Image.new("RGB", (10, 10)) for _ in range(count)]
+
         with (
             patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider),
-            patch("pipeline.ocr.pdf_to_images", return_value=fake_images),
+            patch("pipeline.ocr.pdf_to_images", side_effect=fake_pdf_to_images),
+            patch("pipeline.ocr.fitz.open", side_effect=_fake_fitz_open),
             patch("pipeline.ocr.MAX_PAGES_PER_BATCH", 75),
         ):
             run_ocr("doc1", client)
@@ -234,13 +273,15 @@ class TestRunOcr:
         with (
             patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider),
             patch("pipeline.ocr.ZAI_MAX_PAGES", 100),
-            patch("pipeline.ocr.silver_upsert") as mock_upsert,
+            patch("pipeline.ocr.silver_bulk_upsert") as mock_bulk_upsert,
         ):
             result = run_ocr("doc1", client)
 
-        # Should store 3 rows, one per page
-        assert mock_upsert.call_count == 3
-        page_numbers = [call[0][2]["page_number"] for call in mock_upsert.call_args_list]
+        # Should store 3 rows in a single bulk upsert
+        mock_bulk_upsert.assert_called_once()
+        rows = mock_bulk_upsert.call_args[0][2]
+        assert len(rows) == 3
+        page_numbers = [r["page_number"] for r in rows]
         assert page_numbers == [1, 2, 3]
         assert result["status"] == "done"
         assert result["empty_pages"] == 0
@@ -257,7 +298,7 @@ class TestRunOcr:
         with (
             patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider),
             patch("pipeline.ocr.ZAI_MAX_PAGES", 100),
-            patch("pipeline.ocr.silver_upsert"),
+            patch("pipeline.ocr.silver_bulk_upsert"),
             patch("pipeline.ocr.append_error") as mock_err,
         ):
             result = run_ocr("doc1", client)

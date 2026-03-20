@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import re
 from datetime import datetime, timezone
 
+import jsonschema
 from supabase import Client
 
 from config import ACTIVE_STEPS
 from pipeline.formatting import load_step, load_step_config, validate_output
+from pipeline.page_utils import is_empty_page_content
 from pipeline.providers.registry import get_provider
 from pipeline.tracker import (
     append_error,
@@ -15,16 +16,10 @@ from pipeline.tracker import (
     get_scout_page_scores,
     pipeline_get,
     pipeline_update,
-    scout_page_score_upsert,
+    scout_page_scores_bulk_upsert,
 )
 
 SCOUT_STEP_NAME = "_scout_page"
-_PAGE_MARKER_RE = re.compile(r"^---\s*Page\s+\d+\s*---\s*$", re.MULTILINE)
-
-
-def _is_empty_page_content(content: str) -> bool:
-    """Return True if a stored OCR row contains no real text beyond the page marker."""
-    return not _PAGE_MARKER_RE.sub("", content).strip()
 
 
 def _get_step_definitions() -> dict[str, str]:
@@ -76,7 +71,7 @@ def _score_page(provider, prompt_text: str, schema: dict, ocr_text: str) -> dict
         try:
             _validate_scout_scores(result, schema)
             return result
-        except Exception:
+        except (jsonschema.ValidationError, ValueError):
             if attempt == 1:
                 return None
     return None
@@ -102,7 +97,7 @@ def run_scout(
     if not ocr_chunks:
         raise ValueError(f"No OCR results for doc_id={doc_id}; run OCR first")
 
-    scannable_pages = [chunk for chunk in ocr_chunks if not _is_empty_page_content(chunk["content"])]
+    scannable_pages = [chunk for chunk in ocr_chunks if not is_empty_page_content(chunk["content"])]
     if pipeline_row.get("last_scout") is not None and not force:
         existing_scores = get_scout_page_scores(client, doc_id)
         expected_count = len(scannable_pages) * len(ACTIVE_STEPS)
@@ -119,6 +114,7 @@ def run_scout(
     delete_scout_page_scores(client, doc_id)
 
     try:
+        pending_rows: list[dict] = []
         for chunk in scannable_pages:
             result = _score_page(provider, rendered_prompt, schema, chunk["content"])
             if result is None:
@@ -127,16 +123,15 @@ def run_scout(
 
             page_number = chunk["page_number"]
             for step_name, score in result.items():
-                scout_page_score_upsert(
-                    client,
-                    {
-                        "doc_id": doc_id,
-                        "step_name": step_name,
-                        "page_number": page_number,
-                        "score": score,
-                        "scout_model": config["model"],
-                    },
-                )
+                pending_rows.append({
+                    "doc_id": doc_id,
+                    "step_name": step_name,
+                    "page_number": page_number,
+                    "score": score,
+                    "scout_model": config["model"],
+                })
+
+        scout_page_scores_bulk_upsert(client, pending_rows)
     except Exception as exc:
         append_error(client, doc_id, f"Scout error: {exc}")
         raise
