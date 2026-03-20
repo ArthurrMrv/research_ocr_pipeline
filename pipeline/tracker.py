@@ -57,6 +57,13 @@ def silver_upsert(client: Client, table: str, row: dict, *, on_conflict: str | N
     query.execute()
 
 
+def silver_bulk_upsert(client: Client, table: str, rows: list[dict], *, on_conflict: str | None = None) -> None:
+    """Bulk upsert multiple rows into a silver-layer table in a single request."""
+    if not rows:
+        return
+    client.table(table).upsert(rows, on_conflict=on_conflict).execute()
+
+
 def formatting_upsert(client: Client, row: dict) -> None:
     """Upsert a formatting result keyed by (doc_id, step_name)."""
     client.table("formatting").upsert(row, on_conflict="doc_id,step_name").execute()
@@ -96,6 +103,12 @@ def get_all_doc_ids(client: Client) -> list[str]:
     """Return all doc_ids registered in bronze_mapping."""
     result = client.table("bronze_mapping").select("doc_id").execute()
     return [row["doc_id"] for row in result.data]
+
+
+def get_all_bronze_rows(client: Client) -> list[dict]:
+    """Return all bronze_mapping rows in a single query."""
+    result = client.table("bronze_mapping").select("*").execute()
+    return result.data or []
 
 
 def get_bronze_row(client: Client, doc_id: str) -> dict | None:
@@ -144,6 +157,16 @@ def scout_page_score_upsert(client: Client, row: dict) -> None:
     """Upsert a scout page score keyed by (doc_id, step_name, page_number)."""
     client.table("scout_page_scores").upsert(
         row,
+        on_conflict="doc_id,step_name,page_number",
+    ).execute()
+
+
+def scout_page_scores_bulk_upsert(client: Client, rows: list[dict]) -> None:
+    """Bulk upsert scout page scores in a single request."""
+    if not rows:
+        return
+    client.table("scout_page_scores").upsert(
+        rows,
         on_conflict="doc_id,step_name,page_number",
     ).execute()
 

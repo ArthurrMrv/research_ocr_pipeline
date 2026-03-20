@@ -18,7 +18,7 @@ class TestRegistry:
 
     def test_get_provider_returns_instance(self):
         config = {"provider": "moonshot", "model": "kimi-k2.5"}
-        with patch("pipeline.providers.moonshot.OpenAI"):
+        with patch("pipeline.providers.base.OpenAI"):
             provider = get_provider("moonshot", config)
         assert isinstance(provider, LLMProvider)
 
@@ -30,7 +30,7 @@ class TestRegistry:
 class TestMoonshotProvider:
     def _make_provider(self):
         from pipeline.providers.moonshot import MoonshotProvider
-        with patch("pipeline.providers.moonshot.OpenAI") as mock_openai:
+        with patch("pipeline.providers.base.OpenAI") as mock_openai:
             mock_openai.return_value = MagicMock()
             provider = MoonshotProvider({"model": "kimi-k2.5", "temperature": 0, "max_tokens": 1024})
             provider._client = mock_openai.return_value
@@ -62,7 +62,7 @@ class TestMoonshotProvider:
 
     def test_uses_moonshot_base_url(self, monkeypatch):
         from pipeline.providers import moonshot as m
-        with patch("pipeline.providers.moonshot.OpenAI") as mock_openai:
+        with patch("pipeline.providers.base.OpenAI") as mock_openai:
             mock_openai.return_value = MagicMock()
             from pipeline.providers.moonshot import MoonshotProvider
             MoonshotProvider({"model": "kimi-k2.5"})
@@ -76,7 +76,7 @@ class TestOpenAIProvider:
             monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
         from pipeline.providers.openai_provider import OpenAIProvider
         with (
-            patch("pipeline.providers.openai_provider.OpenAI") as mock_openai,
+            patch("pipeline.providers.base.OpenAI") as mock_openai,
             patch.dict("os.environ", {"OPENAI_API_KEY": "test-openai-key"}),
         ):
             mock_openai.return_value = MagicMock()
@@ -153,7 +153,7 @@ class TestGeminiProvider:
     def test_init_requires_google_api_key(self, monkeypatch):
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         from pipeline.providers.gemini_provider import GeminiProvider
-        with patch("pipeline.providers.gemini_provider.OpenAI"):
+        with patch("pipeline.providers.base.OpenAI"):
             with pytest.raises(KeyError):
                 GeminiProvider(_STEP_CONFIG)
 
@@ -163,7 +163,7 @@ class TestGeminiProvider:
         mock_response = _make_openai_response(json.dumps(payload))
 
         from pipeline.providers.gemini_provider import GeminiProvider
-        with patch("pipeline.providers.gemini_provider.OpenAI") as mock_openai_cls:
+        with patch("pipeline.providers.base.OpenAI") as mock_openai_cls:
             mock_client = MagicMock()
             mock_client.chat.completions.create.return_value = mock_response
             mock_openai_cls.return_value = mock_client
@@ -180,7 +180,7 @@ class TestGeminiProvider:
         mock_response = _make_openai_response("not json at all")
 
         from pipeline.providers.gemini_provider import GeminiProvider
-        with patch("pipeline.providers.gemini_provider.OpenAI") as mock_openai_cls:
+        with patch("pipeline.providers.base.OpenAI") as mock_openai_cls:
             mock_client = MagicMock()
             mock_client.chat.completions.create.return_value = mock_response
             mock_openai_cls.return_value = mock_client
@@ -198,7 +198,7 @@ class TestGeminiProvider:
 
         from pipeline.providers.gemini_provider import GeminiProvider
         with (
-            patch("pipeline.providers.gemini_provider.OpenAI") as mock_openai_cls,
+            patch("pipeline.providers.base.OpenAI") as mock_openai_cls,
         ):
             mock_client = MagicMock()
             mock_client.chat.completions.create.return_value = mock_response
@@ -217,7 +217,7 @@ class TestGeminiProvider:
 
         from pipeline.providers.gemini_provider import GeminiProvider
         with (
-            patch("pipeline.providers.gemini_provider.OpenAI") as mock_openai_cls,
+            patch("pipeline.providers.base.OpenAI") as mock_openai_cls,
         ):
             mock_client = MagicMock()
             mock_client.chat.completions.create.return_value = mock_response
@@ -233,7 +233,7 @@ class TestGeminiProvider:
     def test_uses_gemini_base_url(self, monkeypatch):
         monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
         from pipeline.providers.gemini_provider import GeminiProvider
-        with patch("pipeline.providers.gemini_provider.OpenAI") as mock_openai_cls:
+        with patch("pipeline.providers.base.OpenAI") as mock_openai_cls:
             mock_openai_cls.return_value = MagicMock()
             GeminiProvider(_STEP_CONFIG)
 
@@ -245,7 +245,7 @@ class TestOpenRouterProvider:
     def test_init_requires_openrouter_api_key(self, monkeypatch):
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
         from pipeline.providers.openrouter_provider import OpenRouterProvider
-        with patch("pipeline.providers.openrouter_provider.OpenAI"):
+        with patch("pipeline.providers.base.OpenAI"):
             with pytest.raises(KeyError):
                 OpenRouterProvider(_STEP_CONFIG)
 
@@ -255,7 +255,7 @@ class TestOpenRouterProvider:
         mock_response = _make_openai_response(json.dumps(payload))
 
         from pipeline.providers.openrouter_provider import OpenRouterProvider
-        with patch("pipeline.providers.openrouter_provider.OpenAI") as mock_openai_cls:
+        with patch("pipeline.providers.base.OpenAI") as mock_openai_cls:
             mock_client = MagicMock()
             mock_client.chat.completions.create.return_value = mock_response
             mock_openai_cls.return_value = mock_client
@@ -272,7 +272,7 @@ class TestOpenRouterProvider:
         mock_response = _make_openai_response("not json")
 
         from pipeline.providers.openrouter_provider import OpenRouterProvider
-        with patch("pipeline.providers.openrouter_provider.OpenAI") as mock_openai_cls:
+        with patch("pipeline.providers.base.OpenAI") as mock_openai_cls:
             mock_client = MagicMock()
             mock_client.chat.completions.create.return_value = mock_response
             mock_openai_cls.return_value = mock_client
@@ -284,7 +284,7 @@ class TestOpenRouterProvider:
     def test_uses_openrouter_base_url(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "fake-key")
         from pipeline.providers.openrouter_provider import OpenRouterProvider
-        with patch("pipeline.providers.openrouter_provider.OpenAI") as mock_openai_cls:
+        with patch("pipeline.providers.base.OpenAI") as mock_openai_cls:
             mock_openai_cls.return_value = MagicMock()
             OpenRouterProvider(_STEP_CONFIG)
 
@@ -296,7 +296,7 @@ class TestDashScopeProvider:
     def test_init_requires_dashscope_api_key(self, monkeypatch):
         monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
         from pipeline.providers.dashscope_provider import DashScopeProvider
-        with patch("pipeline.providers.dashscope_provider.OpenAI"):
+        with patch("pipeline.providers.base.OpenAI"):
             with pytest.raises(KeyError):
                 DashScopeProvider(_STEP_CONFIG)
 
@@ -306,7 +306,7 @@ class TestDashScopeProvider:
         mock_response = _make_openai_response(json.dumps(payload))
 
         from pipeline.providers.dashscope_provider import DashScopeProvider
-        with patch("pipeline.providers.dashscope_provider.OpenAI") as mock_openai_cls:
+        with patch("pipeline.providers.base.OpenAI") as mock_openai_cls:
             mock_client = MagicMock()
             mock_client.chat.completions.create.return_value = mock_response
             mock_openai_cls.return_value = mock_client
@@ -321,7 +321,7 @@ class TestDashScopeProvider:
         mock_response = _make_openai_response("not json")
 
         from pipeline.providers.dashscope_provider import DashScopeProvider
-        with patch("pipeline.providers.dashscope_provider.OpenAI") as mock_openai_cls:
+        with patch("pipeline.providers.base.OpenAI") as mock_openai_cls:
             mock_client = MagicMock()
             mock_client.chat.completions.create.return_value = mock_response
             mock_openai_cls.return_value = mock_client
@@ -333,7 +333,7 @@ class TestDashScopeProvider:
     def test_uses_dashscope_base_url(self, monkeypatch):
         monkeypatch.setenv("DASHSCOPE_API_KEY", "fake-key")
         from pipeline.providers.dashscope_provider import DashScopeProvider
-        with patch("pipeline.providers.dashscope_provider.OpenAI") as mock_openai_cls:
+        with patch("pipeline.providers.base.OpenAI") as mock_openai_cls:
             mock_openai_cls.return_value = MagicMock()
             DashScopeProvider(_STEP_CONFIG)
 

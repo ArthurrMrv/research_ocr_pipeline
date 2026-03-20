@@ -23,19 +23,21 @@ from pipeline.formatting import run_formatting
 from pipeline.ingest import ingest, make_doc_id
 from pipeline.ocr import run_ocr
 from pipeline.scout import run_scout
-from pipeline.tracker import get_all_doc_ids, get_bronze_row, get_supabase_client
+from pipeline.tracker import get_all_bronze_rows, get_all_doc_ids, get_supabase_client
 
 ALL_STEPS = ("ingest", "ocr", "scout", "formatting")
 
 console = Console()
 
 
-def _doc_label(client, doc_id: str) -> str:
-    """Return a human-readable label for a doc_id (doc_name or truncated id)."""
-    row = get_bronze_row(client, doc_id)
-    if row and row.get("doc_name"):
-        return row["doc_name"]
-    return doc_id[:12]
+def _build_doc_labels(client) -> dict[str, str]:
+    """Build a {doc_id: label} map from all bronze rows in a single query."""
+    rows = get_all_bronze_rows(client)
+    labels: dict[str, str] = {}
+    for row in rows:
+        doc_id = row["doc_id"]
+        labels[doc_id] = row.get("doc_name") or doc_id[:12]
+    return labels
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -79,7 +81,7 @@ def _run_step(
         )
 
         for doc_id in all_ids:
-            label = doc_labels[doc_id]
+            label = doc_labels.get(doc_id, doc_id[:12])
             progress.update(task_id, description=f"[cyan]{step_name}[/cyan]  {label}")
             try:
                 status = run_fn(doc_id)
@@ -141,7 +143,7 @@ def _run_ocr_step(
         )
 
         for doc_id in all_ids:
-            label = doc_labels[doc_id]
+            label = doc_labels.get(doc_id, doc_id[:12])
             progress.update(main_task, description=f"[cyan]OCR[/cyan]  {label}")
 
             def _batch_cb(done: int, total: int, _bt=batch_task) -> None:
@@ -222,7 +224,7 @@ def _run_formatting_step(
         )
 
         for doc_id in all_ids:
-            label = doc_labels[doc_id]
+            label = doc_labels.get(doc_id, doc_id[:12])
             progress.update(task_id, description=f"[cyan]formatting[/cyan]  {label}")
             try:
                 result = run_formatting(doc_id, supa, force=force)
@@ -377,11 +379,9 @@ def run(
 
     all_ids = get_all_doc_ids(supa)
 
-    # Pre-fetch doc labels with spinner
-    doc_labels: dict[str, str] = {}
+    # Pre-fetch doc labels in a single query
     with console.status("[bold]Loading document index...[/bold]"):
-        for did in all_ids:
-            doc_labels[did] = _doc_label(supa, did)
+        doc_labels = _build_doc_labels(supa)
 
     if single_file_doc_id:
         all_ids = [did for did in all_ids if did == single_file_doc_id]

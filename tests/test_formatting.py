@@ -121,9 +121,10 @@ class TestRunStep:
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.get_provider", return_value=mock_provider),
         ):
-            result = run_step("step1", "some ocr text")
+            result, model = run_step("step1", "some ocr text")
 
         assert result == {"result": "found"}
+        assert model == "kimi-k2.5"
         mock_provider.call.assert_called_once()
 
     def test_retries_on_schema_failure_then_returns_none(self, tmp_path):
@@ -135,9 +136,10 @@ class TestRunStep:
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.get_provider", return_value=mock_provider),
         ):
-            result = run_step("step1", "ocr text")
+            result, model = run_step("step1", "ocr text")
 
         assert result is None
+        assert model == "kimi-k2.5"
         assert mock_provider.call.call_count == 2
 
     def test_returns_result_on_second_attempt(self, tmp_path):
@@ -152,7 +154,7 @@ class TestRunStep:
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.get_provider", return_value=mock_provider),
         ):
-            result = run_step("step1", "ocr text")
+            result, model = run_step("step1", "ocr text")
 
         assert result == {"result": "ok"}
 
@@ -178,7 +180,7 @@ class TestRunStep:
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.get_provider", return_value=mock_provider),
         ):
-            result = run_step("step1", "ocr text", institution="Apple")
+            result, model = run_step("step1", "ocr text", institution="Apple")
 
         assert result == {"result": "ok"}
 
@@ -259,7 +261,7 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
-            patch("pipeline.formatting.run_step", return_value={"result": "rerun"}) as mock_step,
+            patch("pipeline.formatting.run_step", return_value=({"result": "rerun"}, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.delete_formatting_results") as mock_delete,
         ):
@@ -286,7 +288,7 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
-            patch("pipeline.formatting.run_step", return_value=step_result) as mock_step,
+            patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
         ):
             result = run_formatting("doc1", client)
@@ -303,7 +305,7 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
-            patch("pipeline.formatting.run_step", return_value=step_result),
+            patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")),
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.formatting_upsert") as mock_upsert,
         ):
@@ -336,7 +338,7 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
-            patch("pipeline.formatting.run_step", return_value=step_result) as mock_step,
+            patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
         ):
             result = run_formatting("doc1", client)
@@ -355,7 +357,7 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
-            patch("pipeline.formatting.run_step", return_value=None),
+            patch("pipeline.formatting.run_step", return_value=(None, "kimi-k2.5")),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.append_error") as mock_err,
         ):
@@ -381,7 +383,7 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
-            patch("pipeline.formatting.run_step", return_value=step_result) as mock_step,
+            patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
         ):
             run_formatting("doc1", client)
@@ -401,7 +403,7 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
-            patch("pipeline.formatting.run_step", return_value=step_result) as mock_step,
+            patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
         ):
             run_formatting("doc1", client)
@@ -432,7 +434,7 @@ class TestRunFormatting:
 
         def capture_run_step(step_name, ocr_text, **kwargs):
             received_texts.append((step_name, ocr_text))
-            return step_result
+            return step_result, "kimi-k2.5"
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
@@ -469,7 +471,7 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
-            patch("pipeline.formatting.run_step", return_value=step_result) as mock_step,
+            patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
             patch("pipeline.formatting.SCOUT_SCORE_THRESHOLD", 0.5),
@@ -553,7 +555,7 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
-            patch("pipeline.formatting.run_step", return_value=step_result),
+            patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
             patch("pipeline.formatting.SCOUT_SCORE_THRESHOLD", 0.5),
@@ -581,7 +583,7 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
-            patch("pipeline.formatting.run_step", return_value=step_result) as mock_step,
+            patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.increment_formatting_attempts", return_value=4) as mock_increment,
         ):

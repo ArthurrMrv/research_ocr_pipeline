@@ -2,6 +2,13 @@ from __future__ import annotations
 
 import re
 
+PAGE_MARKER_RE = re.compile(r"^---\s*Page\s+\d+\s*---\s*$", re.MULTILINE)
+
+
+def is_empty_page_content(content: str) -> bool:
+    """Return True if a stored OCR row contains no real text beyond the page marker."""
+    return not PAGE_MARKER_RE.sub("", content).strip()
+
 
 def get_total_pages(ocr_text: str) -> int:
     """Return the highest page number found in OCR text."""
