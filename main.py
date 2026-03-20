@@ -344,10 +344,12 @@ def run(
         pdfs = [pdf_path]
         single_file_basename: str | None = os.path.basename(pdf_path)
         single_file_doc_id: str | None = make_doc_id(pdf_path)
+        dir_doc_ids: set[str] | None = None
     else:
         pdfs = glob(f"{pdf_path}/*.pdf")
         single_file_basename = None
         single_file_doc_id = None
+        dir_doc_ids = {make_doc_id(p) for p in pdfs}
 
     # Banner
     console.rule("[cyan bold]Ingestion Pipeline")
@@ -378,6 +380,8 @@ def run(
         )
 
     all_ids = get_all_doc_ids(supa)
+    if dir_doc_ids is not None:
+        all_ids = [did for did in all_ids if did in dir_doc_ids]
 
     # Pre-fetch doc labels in a single query
     with console.status("[bold]Loading document index...[/bold]"):

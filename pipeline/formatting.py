@@ -404,7 +404,7 @@ def run_formatting(
             {
                 "doc_id": doc_id,
                 "step_name": step_name,
-                "formatting_model": config["model"],
+                "formatting_model": model_name,
                 "pages_given": pages_given,
                 "content": result,
             },
