@@ -14,19 +14,27 @@ class TestMakeDocId:
         id2 = make_doc_id(str(pdf))
         assert id1 == id2
 
-    def test_different_paths_produce_different_ids(self, tmp_path):
+    def test_different_filenames_produce_different_ids(self, tmp_path):
         a = tmp_path / "a.pdf"
         b = tmp_path / "b.pdf"
         a.touch()
         b.touch()
         assert make_doc_id(str(a)) != make_doc_id(str(b))
 
-    def test_uses_absolute_path(self, tmp_path):
+    def test_same_filename_different_dirs_produce_same_id(self, tmp_path):
+        dir_a = tmp_path / "dir_a"
+        dir_b = tmp_path / "dir_b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        (dir_a / "report.pdf").touch()
+        (dir_b / "report.pdf").touch()
+        assert make_doc_id(str(dir_a / "report.pdf")) == make_doc_id(str(dir_b / "report.pdf"))
+
+    def test_relative_and_absolute_produce_same_id(self, tmp_path):
         pdf = tmp_path / "report.pdf"
         pdf.touch()
         abs_id = make_doc_id(os.path.abspath(str(pdf)))
         rel_id = make_doc_id(str(pdf))
-        # Both should resolve to same absolute path
         assert abs_id == rel_id
 
 

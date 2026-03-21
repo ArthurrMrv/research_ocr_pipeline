@@ -10,9 +10,9 @@ UUID_NS = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
 
 def make_doc_id(path: str) -> str:
-    """Deterministic doc_id from absolute file path using UUID5."""
-    abs_path = os.path.abspath(path)
-    return str(uuid.uuid5(UUID_NS, abs_path))
+    """Deterministic doc_id from document filename using UUID5."""
+    doc_name = os.path.basename(os.path.abspath(path))
+    return str(uuid.uuid5(UUID_NS, doc_name))
 
 
 def ingest(pdf_paths: list[str], client: Client) -> list[str]:

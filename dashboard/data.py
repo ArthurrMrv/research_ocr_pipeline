@@ -173,6 +173,40 @@ def _build_extract_model_name_export_df(
 
 
 @st.cache_data(ttl=300)
+def fetch_mermaid_reports() -> list[dict]:
+    """Return reports that have mermaid diagrams, with doc metadata.
+
+    Each dict has: doc_name, institution, model_name, mermaid_diagram, steps_summary.
+    """
+    formatting_rows = _query(
+        "formatting",
+        select="doc_id,content",
+        step_name="extract_model_name",
+    )
+    bronze_rows = _query("bronze_mapping", select="doc_id,doc_name,institution")
+    meta_map = {
+        row.get("doc_id"): row
+        for row in bronze_rows
+    }
+
+    reports = []
+    for row in formatting_rows:
+        content = row.get("content") or {}
+        diagram = content.get("mermaid_diagram")
+        if not diagram:
+            continue
+        meta = meta_map.get(row.get("doc_id"), {})
+        reports.append({
+            "doc_name": meta.get("doc_name", "Unknown"),
+            "institution": meta.get("institution", "Unknown"),
+            "model_name": content.get("model_name", ""),
+            "mermaid_diagram": diagram,
+            "steps_summary": content.get("steps_summary", ""),
+        })
+    return sorted(reports, key=lambda r: (r["institution"], r["doc_name"]))
+
+
+@st.cache_data(ttl=300)
 def fetch_extract_model_name_export() -> pd.DataFrame:
     """Flattened extract_model_name results for dashboard display and CSV export."""
     formatting_rows = _query(
