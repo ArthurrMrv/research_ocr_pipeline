@@ -1,8 +1,10 @@
-"""Report export page — download mermaid charts as Markdown or HTML."""
+"""Report export page — auto-generates PDF from mermaid charts."""
 
+import base64
 import html
 import re
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -146,15 +148,32 @@ def _build_html(report_list: list[dict]) -> str:
     pre.mermaid {{ background: #f8f9fa; padding: 1rem; border-radius: 6px; }}
     hr {{ border: none; border-top: 1px solid #ddd; margin: 2rem 0; }}
 
+    .print-btn {{
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      padding: 0.5rem 1.2rem;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      z-index: 1000;
+    }}
+    .print-btn:hover {{ background: #1d4ed8; }}
+
     @media print {{
       body {{ padding: 0; max-width: 100%; }}
       nav {{ page-break-after: always; }}
       section {{ page-break-before: always; }}
       a {{ color: inherit; text-decoration: none; }}
+      .print-btn {{ display: none; }}
     }}
   </style>
 </head>
 <body>
+  <button class="print-btn" onclick="window.print()">Print / Save as PDF</button>
   <h1>Mermaid Charts Export</h1>
   <p class="meta">Generated: {now}</p>
 
@@ -175,6 +194,32 @@ def _build_html(report_list: list[dict]) -> str:
 </html>"""
 
 
+def _render_pdf(html_content: str) -> bytes:
+    """Render HTML with mermaid diagrams to PDF using a headless browser."""
+    from playwright.sync_api import sync_playwright
+
+    with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
+        f.write(html_content.encode("utf-8"))
+        html_path = f.name
+
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page()
+            page.goto(f"file://{html_path}")
+            page.wait_for_function("document.querySelectorAll('.mermaid svg').length > 0", timeout=15000)
+            pdf_bytes = page.pdf(
+                format="A4",
+                print_background=True,
+                margin={"top": "1cm", "right": "1cm", "bottom": "1cm", "left": "1cm"},
+            )
+            browser.close()
+    finally:
+        Path(html_path).unlink(missing_ok=True)
+
+    return pdf_bytes
+
+
 # ── Page ─────────────────────────────────────────────────────────────
 
 if st.sidebar.button("\U0001f504 Refresh Data", key="refresh_report_export"):
@@ -182,7 +227,6 @@ if st.sidebar.button("\U0001f504 Refresh Data", key="refresh_report_export"):
     st.rerun()
 
 st.title("Report Export")
-st.markdown("Download all reports with mermaid diagrams as **Markdown** or **HTML**.")
 
 reports = fetch_mermaid_reports()
 
@@ -192,34 +236,32 @@ if not reports:
 
 st.metric("Reports with diagrams", len(reports))
 
-with st.expander("Preview available reports", expanded=False):
-    for report in reports:
-        st.text(
-            f"- {report['doc_name']} — {report['institution']}  "
-            f"(model: {report['model_name']})"
-        )
+html_content = _build_html(reports)
 
-col1, col2 = st.columns(2)
 
-with col1:
-    md_content = _build_markdown(reports)
-    st.download_button(
-        "Download Markdown",
-        data=md_content.encode("utf-8"),
-        file_name="mermaid_charts_export.md",
-        mime="text/markdown",
+@st.cache_data(show_spinner=False)
+def _cached_pdf(html_src: str) -> bytes:
+    """Generate and cache the PDF so it's only rendered once per data change."""
+    return _render_pdf(html_src)
+
+
+with st.spinner("Rendering mermaid diagrams to PDF..."):
+    try:
+        pdf_bytes = _cached_pdf(html_content)
+    except Exception as e:
+        pdf_bytes = None
+        st.error(f"PDF generation failed: {e}")
+
+if pdf_bytes is not None:
+    b64 = base64.b64encode(pdf_bytes).decode()
+    pdf_data_uri = f"data:application/pdf;base64,{b64}"
+    st.markdown(
+        f'<iframe src="{pdf_data_uri}" width="100%" height="800" type="application/pdf"></iframe>',
+        unsafe_allow_html=True,
     )
-
-with col2:
-    html_content = _build_html(reports)
     st.download_button(
-        "Download HTML",
-        data=html_content.encode("utf-8"),
-        file_name="mermaid_charts_export.html",
-        mime="text/html",
+        "Download PDF",
+        data=pdf_bytes,
+        file_name="mermaid_charts_export.pdf",
+        mime="application/pdf",
     )
-
-st.info(
-    "The HTML file renders mermaid diagrams in-browser. "
-    "Open it and use **Print → Save as PDF** for a PDF with page breaks between reports."
-)

@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EquityReturnsModelInputs",
+  "type": "object",
+  "required": [
+    "model_name",
+    "variables"
+  ],
+  "properties": {
+    "model_name": {
+      "type": "string",
+      "description": "Exact model name or label used in the report for the U.S. equity return forecast approach."
+    },
+    "notes_model": {
+      "type": "string",
+      "description": "Optional extremely short list of key words summarizing the approach."
+    },
+    "variables": {
+      "type": "array",
+      "description": "Flat list of variables, inputs, ensure these are the primary variables used by the model for U.S. equity return forecast.",
+      "items": { "type": "string" }
+    },
+    "variables_important": {
+      "type": "array",
+      "description": "Optional list of explicitly important factors mentioned in the report for this approach.",
+      "items": { "type": "string" }
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "Value-type assumptions: specific numbers, macro climate, variable values. Implied assumptions end with '(implied)'.",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

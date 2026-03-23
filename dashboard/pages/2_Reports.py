@@ -124,11 +124,10 @@ with st.expander("📊 Formatting Results", expanded=True):
                 st.warning("Empty content.")
                 continue
 
-            if step == "extract_model_name":
+            if step == "extract_model_inputs":
                 st.markdown(f"**Model Name:** {content.get('model_name', 'N/A')}")
                 if content.get("notes_model"):
                     st.markdown(f"**Notes:** {content['notes_model']}")
-                st.markdown(f"**Summary:** {content.get('steps_summary', '')}")
 
                 if content.get("variables"):
                     st.markdown("**Variables:**")
@@ -137,6 +136,13 @@ with st.expander("📊 Formatting Results", expanded=True):
                 if content.get("variables_important"):
                     st.markdown("**Key Variables:**")
                     st.write(content["variables_important"])
+
+                if content.get("assumptions"):
+                    st.markdown("**Assumptions (values):**")
+                    st.write(content["assumptions"])
+
+            elif step == "extract_model_methodology":
+                st.markdown(f"**Summary:** {content.get('steps_summary', '')}")
 
                 if content.get("steps_detailed"):
                     with st.expander("Detailed Steps"):
@@ -149,6 +155,10 @@ with st.expander("📊 Formatting Results", expanded=True):
                 if content.get("sub_models"):
                     st.markdown("**Sub-models:**")
                     st.write(content["sub_models"])
+
+                if content.get("assumptions"):
+                    st.markdown("**Assumptions (structural):**")
+                    st.write(content["assumptions"])
 
             elif step == "extract_table":
                 table_data = content.get("table")

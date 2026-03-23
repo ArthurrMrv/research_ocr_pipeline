@@ -1,0 +1,26 @@
+Task: Analyze the provided financial document and extract the methodology and process for the U.S. equity return forecast.
+
+Return exactly one JSON object with this shape:
+{
+  "steps_summary": "string",
+  "steps_detailed": "string",
+  "mermaid_diagram": "flowchart TD ...",
+  "sub_models": ["string"],
+  "assumptions": ["string"]
+}
+
+Rules:
+- Focus specifically on the U.S. equity return forecast methodology and process.
+- Use ONLY information explicitly stated in the report. Do not infer or import outside knowledge.
+- `steps_summary` must be a concise summary of the whole approach.
+- `steps_detailed` must be a more detailed summary of the whole approach and must explicitly include all stated assumptions, constraints, and conditions relevant to the U.S. equity return forecast. Present it as an ordered step list using '\n(stepNumber)'.
+- `mermaid_diagram` must be a Mermaid flowchart string.
+- The diagram should show the flow from initial variables or risk factors, through any explicit intermediary calculations, decomposition steps, or checks, to the final U.S. equity return output.
+- If intermediary steps are not explicitly given, use a simple direct flow from inputs to final output.
+- `sub_models` is optional. Include it only if specific sub-models or component models are explicitly mentioned.
+- `assumptions` must list structural assumptions only: relationships between variables, functional forms, causal links, and model structure choices. Keep each assumption short and concise. Use math notation where appropriate (e.g. "r_equity = r_f + beta * ERP", "dividend growth tracks earnings growth", "mean reversion in valuations"). If a constraint is implied rather than explicitly stated, append `(implied)` at the end of that element.
+- Do not include owner, vendor, grouped categories, or any other keys beyond the schema above.
+- Return JSON only. No markdown, no explanation, no code fences.
+
+OCR TEXT:
+{ocr_text}

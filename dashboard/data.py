@@ -19,6 +19,8 @@ MODEL_EXPORT_COLUMNS = [
     "steps_summary",
     "steps_detailed",
     "variables_importants",
+    "assumptions_values",
+    "assumptions_structural",
 ]
 
 
@@ -138,12 +140,23 @@ def _serialize_list(values: object) -> str:
     return ", ".join(str(value) for value in values if value is not None)
 
 
-def _build_extract_model_name_export_df(
-    formatting_rows: list[dict],
+def _serialize_bullet_list(values: object) -> str:
+    """Render list values as bullet-pointed lines for CSV export."""
+    if not isinstance(values, list):
+        return ""
+    items = [str(v) for v in values if v is not None]
+    if not items:
+        return ""
+    return "\n".join(f"* {item}" for item in items)
+
+
+def _build_model_export_df(
+    inputs_rows: list[dict],
+    methodology_rows: list[dict],
     bronze_rows: list[dict],
 ) -> pd.DataFrame:
-    """Flatten extract_model_name formatting rows into export-ready columns."""
-    if not formatting_rows:
+    """Merge extract_model_inputs + extract_model_methodology into export-ready columns."""
+    if not inputs_rows and not methodology_rows:
         return pd.DataFrame(columns=MODEL_EXPORT_COLUMNS)
 
     name_map = {
@@ -151,21 +164,34 @@ def _build_extract_model_name_export_df(
         for row in bronze_rows
     }
 
+    inputs_by_doc = {
+        row.get("doc_id"): row.get("content") or {}
+        for row in inputs_rows
+    }
+    methodology_by_doc = {
+        row.get("doc_id"): row.get("content") or {}
+        for row in methodology_rows
+    }
+
+    all_doc_ids = set(inputs_by_doc) | set(methodology_by_doc)
     records = []
-    for row in formatting_rows:
-        content = row.get("content") or {}
-        variables = content.get("variables")
-        important_variables = content.get("variables_important")
+    for doc_id in sorted(all_doc_ids):
+        inp = inputs_by_doc.get(doc_id, {})
+        meth = methodology_by_doc.get(doc_id, {})
+        variables = inp.get("variables")
+        important_variables = inp.get("variables_important")
         records.append(
             {
-                "document_name": name_map.get(row.get("doc_id"), ""),
-                "model_name": content.get("model_name", ""),
-                "notes_model": content.get("notes_model", ""),
+                "document_name": name_map.get(doc_id, ""),
+                "model_name": inp.get("model_name", ""),
+                "notes_model": inp.get("notes_model", ""),
                 "variables": _serialize_list(variables),
                 "variables_nb": len(variables) if isinstance(variables, list) else 0,
-                "steps_summary": content.get("steps_summary", ""),
-                "steps_detailed": content.get("steps_detailed", ""),
+                "steps_summary": meth.get("steps_summary", ""),
+                "steps_detailed": meth.get("steps_detailed", ""),
                 "variables_importants": _serialize_list(important_variables),
+                "assumptions_values": _serialize_bullet_list(inp.get("assumptions")),
+                "assumptions_structural": _serialize_bullet_list(meth.get("assumptions")),
             }
         )
 
@@ -177,29 +203,41 @@ def fetch_mermaid_reports() -> list[dict]:
     """Return reports that have mermaid diagrams, with doc metadata.
 
     Each dict has: doc_name, institution, model_name, mermaid_diagram, steps_summary.
+    Merges data from extract_model_inputs (model_name) and extract_model_methodology (diagram, summary).
     """
-    formatting_rows = _query(
+    methodology_rows = _query(
         "formatting",
         select="doc_id,content",
-        step_name="extract_model_name",
+        step_name="extract_model_methodology",
+    )
+    inputs_rows = _query(
+        "formatting",
+        select="doc_id,content",
+        step_name="extract_model_inputs",
     )
     bronze_rows = _query("bronze_mapping", select="doc_id,doc_name,institution")
     meta_map = {
         row.get("doc_id"): row
         for row in bronze_rows
     }
+    inputs_by_doc = {
+        row.get("doc_id"): row.get("content") or {}
+        for row in inputs_rows
+    }
 
     reports = []
-    for row in formatting_rows:
+    for row in methodology_rows:
         content = row.get("content") or {}
         diagram = content.get("mermaid_diagram")
         if not diagram:
             continue
-        meta = meta_map.get(row.get("doc_id"), {})
+        doc_id = row.get("doc_id")
+        meta = meta_map.get(doc_id, {})
+        inp = inputs_by_doc.get(doc_id, {})
         reports.append({
             "doc_name": meta.get("doc_name", "Unknown"),
             "institution": meta.get("institution", "Unknown"),
-            "model_name": content.get("model_name", ""),
+            "model_name": inp.get("model_name", ""),
             "mermaid_diagram": diagram,
             "steps_summary": content.get("steps_summary", ""),
         })
@@ -207,15 +245,20 @@ def fetch_mermaid_reports() -> list[dict]:
 
 
 @st.cache_data(ttl=300)
-def fetch_extract_model_name_export() -> pd.DataFrame:
-    """Flattened extract_model_name results for dashboard display and CSV export."""
-    formatting_rows = _query(
+def fetch_model_export() -> pd.DataFrame:
+    """Merged extract_model_inputs + extract_model_methodology for CSV export."""
+    inputs_rows = _query(
         "formatting",
         select="doc_id,content",
-        step_name="extract_model_name",
+        step_name="extract_model_inputs",
+    )
+    methodology_rows = _query(
+        "formatting",
+        select="doc_id,content",
+        step_name="extract_model_methodology",
     )
     bronze_rows = _query("bronze_mapping", select="doc_id,doc_name")
-    return _build_extract_model_name_export_df(formatting_rows, bronze_rows)
+    return _build_model_export_df(inputs_rows, methodology_rows, bronze_rows)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────

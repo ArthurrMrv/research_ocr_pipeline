@@ -23,7 +23,7 @@ from pipeline.formatting import run_formatting
 from pipeline.ingest import ingest, make_doc_id
 from pipeline.ocr import run_ocr
 from pipeline.scout import run_scout
-from pipeline.tracker import get_all_bronze_rows, get_all_doc_ids, get_supabase_client
+from pipeline.tracker import get_all_bronze_rows, get_all_doc_ids, get_bronze_row_by_name, get_supabase_client
 
 ALL_STEPS = ("ingest", "ocr", "scout", "formatting")
 
@@ -343,13 +343,17 @@ def run(
     if os.path.isfile(pdf_path):
         pdfs = [pdf_path]
         single_file_basename: str | None = os.path.basename(pdf_path)
-        single_file_doc_id: str | None = make_doc_id(pdf_path)
+        _row = get_bronze_row_by_name(supa, os.path.basename(pdf_path))
+        single_file_doc_id: str | None = _row["doc_id"] if _row else make_doc_id(pdf_path)
         dir_doc_ids: set[str] | None = None
     else:
         pdfs = glob(f"{pdf_path}/*.pdf")
         single_file_basename = None
         single_file_doc_id = None
-        dir_doc_ids = {make_doc_id(p) for p in pdfs}
+        dir_doc_ids: set[str] = set()
+        for p in pdfs:
+            row = get_bronze_row_by_name(supa, os.path.basename(p))
+            dir_doc_ids.add(row["doc_id"] if row else make_doc_id(p))
 
     # Banner
     console.rule("[cyan bold]Ingestion Pipeline")

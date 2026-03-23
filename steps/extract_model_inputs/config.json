@@ -1,0 +1,11 @@
+{
+  "definition": "Pages about the U.S. equity market return forecast model identification, including the exact model name, the variables or risk factors used as inputs, and any stated or implied variable values or macroeconomic assumptions.",
+  "provider": "gemini",
+  "model": "gemini-3.1-pro-preview",
+  "temperature": 0,
+  "max_tokens": 5000,
+  "multi_pass": true,
+  "draft_model": "gemini-2.0-flash",
+  "draft_runs": 3,
+  "depends_on": "extract_model_methodology"
+}

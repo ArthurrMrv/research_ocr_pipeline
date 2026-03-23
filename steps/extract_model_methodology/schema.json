@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EquityReturnsModelMethodology",
+  "type": "object",
+  "required": [
+    "steps_summary",
+    "steps_detailed",
+    "mermaid_diagram"
+  ],
+  "properties": {
+    "steps_summary": {
+      "type": "string",
+      "description": "Concise summary of the end-to-end U.S. equity forecast approach."
+    },
+    "steps_detailed": {
+      "type": "string",
+      "description": "Detailed summary of the end-to-end U.S. equity forecast approach that explicitly includes all stated assumptions, constraints, and conditions."
+    },
+    "mermaid_diagram": {
+      "type": "string",
+      "description": "Mermaid flowchart showing how initial variables feed intermediary steps or checks and lead to the final U.S. equity return output."
+    },
+    "sub_models": {
+      "type": "array",
+      "description": "Optional list of named sub-models or component models mentioned for this extraction target.",
+      "items": { "type": "string" }
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "Structural assumptions: relationships between variables, functional forms, causal links. Implied assumptions end with '(implied)'.",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

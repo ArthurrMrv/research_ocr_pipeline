@@ -120,6 +120,15 @@ def get_bronze_row(client: Client, doc_id: str) -> dict | None:
     return rows[0] if rows else None
 
 
+def get_bronze_row_by_name(client: Client, doc_name: str) -> dict | None:
+    """Return the bronze_mapping row for a doc_name, or None if not found."""
+    result = (
+        client.table("bronze_mapping").select("*").eq("doc_name", doc_name).execute()
+    )
+    rows = result.data
+    return rows[0] if rows else None
+
+
 def get_ocr_chunks(client: Client, doc_id: str) -> list[dict]:
     """Return all ocr_results rows for doc_id, sorted by page_number."""
     result = (

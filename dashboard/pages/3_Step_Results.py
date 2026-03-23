@@ -16,7 +16,7 @@ if st.sidebar.button("🔄 Refresh Data", key="refresh_steps"):
 
 st.title("Step Results")
 
-KNOWN_STEPS = ["extract_model_name", "extract_table"]
+KNOWN_STEPS = ["extract_model_inputs", "extract_model_methodology", "extract_table"]
 
 selected_step = st.selectbox("Select a step", KNOWN_STEPS)
 
@@ -49,7 +49,7 @@ st.markdown("---")
 
 # ── Results Table ──────────────────────────────────────────────────
 
-if selected_step == "extract_model_name":
+if selected_step == "extract_model_inputs":
     records = []
     for _, row in fmt_df.iterrows():
         content = row.get("content") or {}
@@ -59,25 +59,56 @@ if selected_step == "extract_model_name":
                 "institution": row.get("institution", ""),
                 "model_name": content.get("model_name", ""),
                 "variables": ", ".join(content.get("variables", [])),
+            }
+        )
+    results_df = pd.DataFrame(records)
+    st.dataframe(results_df, use_container_width=True, hide_index=True)
+
+    for _, row in fmt_df.iterrows():
+        content = row.get("content") or {}
+        label = f"{row.get('doc_name', '')} — {row.get('institution', '')}"
+        with st.expander(label):
+            st.markdown(f"**Model:** {content.get('model_name', 'N/A')}")
+            if content.get("variables"):
+                st.markdown("**Variables:**")
+                st.write(content["variables"])
+            if content.get("variables_important"):
+                st.markdown("**Key Variables:**")
+                st.write(content["variables_important"])
+            if content.get("assumptions"):
+                st.markdown("**Assumptions (values):**")
+                st.write(content["assumptions"])
+
+elif selected_step == "extract_model_methodology":
+    records = []
+    for _, row in fmt_df.iterrows():
+        content = row.get("content") or {}
+        records.append(
+            {
+                "doc_name": row.get("doc_name", ""),
+                "institution": row.get("institution", ""),
                 "summary": content.get("steps_summary", ""),
             }
         )
     results_df = pd.DataFrame(records)
     st.dataframe(results_df, use_container_width=True, hide_index=True)
 
-    # Expandable detailed view
     for _, row in fmt_df.iterrows():
         content = row.get("content") or {}
         label = f"{row.get('doc_name', '')} — {row.get('institution', '')}"
         with st.expander(label):
-            st.markdown(f"**Model:** {content.get('model_name', 'N/A')}")
             if content.get("steps_summary"):
                 st.markdown(f"**Summary:** {content['steps_summary']}")
-            if content.get("variables"):
-                st.markdown("**Variables:**")
-                st.write(content["variables"])
+            if content.get("steps_detailed"):
+                st.markdown(content["steps_detailed"])
             if content.get("mermaid_diagram"):
                 st.code(content["mermaid_diagram"], language="mermaid")
+            if content.get("sub_models"):
+                st.markdown("**Sub-models:**")
+                st.write(content["sub_models"])
+            if content.get("assumptions"):
+                st.markdown("**Assumptions (structural):**")
+                st.write(content["assumptions"])
 
 elif selected_step == "extract_table":
     records = []

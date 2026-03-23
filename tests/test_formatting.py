@@ -4,7 +4,15 @@ from unittest.mock import MagicMock, patch
 import jsonschema
 import pytest
 
-from pipeline.formatting import load_step, run_formatting, run_step, validate_output
+from pipeline.formatting import (
+    _build_methodology_context,
+    _merge_drafts,
+    _run_step_multipass,
+    load_step,
+    run_formatting,
+    run_step,
+    validate_output,
+)
 from pipeline.providers.base import NonJSONResponseError
 from pipeline.step_errors import MissingPromptError
 
@@ -222,8 +230,8 @@ class TestRunFormatting:
             "formatting_nb": 0,
         }
         formatting_rows = [
-            {"step_name": "extract_model_name", "content": {"result": "ok"}},
-            {"step_name": "extract_table", "content": {"result": "ok"}},
+            {"step_name": "extract_model_inputs", "content": {"result": "ok"}},
+            {"step_name": "extract_model_methodology", "content": {"result": "ok"}},
         ]
         client = self._make_client(
             pipeline_row,
@@ -233,6 +241,7 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.run_step") as mock_step,
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
         ):
             result = run_formatting("doc1", client)
@@ -262,6 +271,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=({"result": "rerun"}, "kimi-k2.5")) as mock_step,
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.delete_formatting_results") as mock_delete,
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
@@ -290,6 +300,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
@@ -308,6 +319,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")),
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.formatting_upsert") as mock_upsert,
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
@@ -343,6 +355,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
@@ -363,6 +376,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=(None, "kimi-k2.5")),
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.append_error") as mock_err,
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
@@ -390,6 +404,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
         ):
             run_formatting("doc1", client)
@@ -410,6 +425,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
         ):
             run_formatting("doc1", client)
@@ -445,6 +461,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", side_effect=capture_run_step),
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
             patch("pipeline.formatting.SCOUT_SCORE_THRESHOLD", 0.5),
@@ -479,6 +496,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=step_result),
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.formatting_upsert") as mock_upsert,
         ):
@@ -503,6 +521,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
             patch("pipeline.formatting.SCOUT_SCORE_THRESHOLD", 0.5),
@@ -528,6 +547,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", side_effect=RuntimeError("429 Too Many Requests")),
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.append_error"),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
@@ -548,6 +568,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", side_effect=NonJSONResponseError("Gemini", "{\n  \"a\": 1\n}\ntrailing")),
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.debug_logger.is_enabled", return_value=True),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
@@ -568,6 +589,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", side_effect=MissingPromptError("step1", "Unknown")),
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.append_error"),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
@@ -593,6 +615,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")),
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
             patch("pipeline.formatting.SCOUT_SCORE_THRESHOLD", 0.5),
@@ -621,6 +644,7 @@ class TestRunFormatting:
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
             patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
+            patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {"type": "object", "required": ["result"], "properties": {"result": {"type": "string"}}}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.increment_formatting_attempts", return_value=4) as mock_increment,
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
@@ -630,3 +654,395 @@ class TestRunFormatting:
         assert result["status"] == "done"
         assert mock_step.call_count == 2
         mock_increment.assert_called_once_with(client, "doc1")
+
+
+class TestMergeDrafts:
+    def test_unions_variables_deduplicates(self):
+        drafts = [
+            {"model_name": "CMAs", "variables": ["inflation", "GDP growth"]},
+            {"model_name": "CMAs", "variables": ["GDP growth", "dividend yield"]},
+            {"model_name": "CMAs", "variables": ["inflation", "risk premium"]},
+        ]
+        merged = _merge_drafts(drafts)
+        assert merged["variables"] == ["inflation", "GDP growth", "dividend yield", "risk premium"]
+
+    def test_unions_variables_important(self):
+        drafts = [
+            {"variables_important": ["inflation"]},
+            {"variables_important": ["inflation", "GDP"]},
+        ]
+        merged = _merge_drafts(drafts)
+        assert merged["variables_important"] == ["inflation", "GDP"]
+
+    def test_unions_assumptions(self):
+        drafts = [
+            {"assumptions": ["inflation = 2%"]},
+            {"assumptions": ["inflation = 2%", "GDP > 0 (implied)"]},
+        ]
+        merged = _merge_drafts(drafts)
+        assert merged["assumptions"] == ["inflation = 2%", "GDP > 0 (implied)"]
+
+    def test_picks_most_common_model_name(self):
+        drafts = [
+            {"model_name": "Capital Market Assumptions"},
+            {"model_name": "Capital Market Model"},
+            {"model_name": "Capital Market Assumptions"},
+        ]
+        merged = _merge_drafts(drafts)
+        assert merged["model_name"] == "Capital Market Assumptions"
+
+    def test_handles_missing_fields(self):
+        drafts = [{"model_name": "X"}, {}]
+        merged = _merge_drafts(drafts)
+        assert merged["model_name"] == "X"
+        assert merged["variables"] == []
+        assert merged["notes_model"] == ""
+
+    def test_case_insensitive_dedup(self):
+        drafts = [
+            {"variables": ["Inflation", "gdp"]},
+            {"variables": ["inflation", "GDP"]},
+        ]
+        merged = _merge_drafts(drafts)
+        assert len(merged["variables"]) == 2
+        # First-seen wins
+        assert merged["variables"][0] == "Inflation"
+        assert merged["variables"][1] == "gdp"
+
+
+class TestBuildMethodologyContext:
+    def test_full_result(self):
+        result = {
+            "steps_summary": "Build blocks combined into expected return.",
+            "steps_detailed": "1. Project macro.\n2. Estimate earnings.",
+            "sub_models": ["CAPM", "DDM"],
+        }
+        ctx = _build_methodology_context(result)
+        assert "Summary: Build blocks combined" in ctx
+        assert "Sub-models used: CAPM, DDM" in ctx
+        # steps_detailed should NOT be included (user chose summary + sub_models only)
+        assert "Project macro" not in ctx
+
+    def test_none_result(self):
+        assert _build_methodology_context(None) == ""
+
+    def test_empty_result(self):
+        assert _build_methodology_context({}) == ""
+
+    def test_no_sub_models(self):
+        result = {"steps_summary": "Simple approach."}
+        ctx = _build_methodology_context(result)
+        assert "Summary: Simple approach." in ctx
+        assert "Sub-models" not in ctx
+
+
+class TestRunStepMultipass:
+    def test_drafts_merged_and_verified(self, tmp_path):
+        step_dir = _make_step_dir(
+            tmp_path,
+            "mp_step",
+            config={
+                "provider": "moonshot",
+                "model": "pro-model",
+                "draft_model": "flash-model",
+                "draft_runs": 2,
+                "multi_pass": True,
+            },
+            schema={
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "required": ["model_name", "variables"],
+                "properties": {
+                    "model_name": {"type": "string"},
+                    "variables": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+        )
+        (step_dir / "verify_prompt.txt").write_text(
+            "Verify: {draft_result}\n\nOCR TEXT:\n{ocr_text}"
+        )
+
+        flash_provider = MagicMock()
+        flash_provider.call.side_effect = [
+            {"model_name": "CMA", "variables": ["inflation"]},
+            {"model_name": "CMA", "variables": ["inflation", "GDP"]},
+        ]
+        pro_provider = MagicMock()
+        pro_provider.call.return_value = {
+            "model_name": "CMA",
+            "variables": ["inflation", "GDP"],
+        }
+
+        providers_created = []
+
+        def fake_get_provider(name, config):
+            providers_created.append(config["model"])
+            if config["model"] == "flash-model":
+                return flash_provider
+            return pro_provider
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.get_provider", side_effect=fake_get_provider),
+        ):
+            result, model = _run_step_multipass("mp_step", "some ocr text")
+
+        assert result == {"model_name": "CMA", "variables": ["inflation", "GDP"]}
+        assert model == "pro-model"
+        assert flash_provider.call.call_count == 2
+        assert pro_provider.call.call_count == 1
+        # Verify the verify prompt was filled with merged draft
+        verify_call_prompt = pro_provider.call.call_args[0][0]
+        assert "inflation" in verify_call_prompt
+        assert "GDP" in verify_call_prompt
+
+    def test_falls_back_to_single_pass_when_all_drafts_fail(self, tmp_path):
+        _make_step_dir(
+            tmp_path,
+            "mp_step",
+            config={
+                "provider": "moonshot",
+                "model": "pro-model",
+                "draft_model": "flash-model",
+                "draft_runs": 2,
+                "multi_pass": True,
+            },
+        )
+
+        flash_provider = MagicMock()
+        flash_provider.call.side_effect = RuntimeError("API error")
+
+        def fake_get_provider(name, config):
+            if config["model"] == "flash-model":
+                return flash_provider
+            return MagicMock()
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.get_provider", side_effect=fake_get_provider),
+            patch(
+                "pipeline.formatting.run_step",
+                return_value=({"result": "fallback"}, "pro-model"),
+            ) as mock_run_step,
+        ):
+            result, model = _run_step_multipass("mp_step", "ocr text")
+
+        assert result == {"result": "fallback"}
+        mock_run_step.assert_called_once()
+
+    def test_returns_none_on_verify_validation_failure(self, tmp_path):
+        step_dir = _make_step_dir(
+            tmp_path,
+            "mp_step",
+            config={
+                "provider": "moonshot",
+                "model": "pro-model",
+                "draft_model": "flash-model",
+                "draft_runs": 1,
+                "multi_pass": True,
+            },
+            schema={
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "required": ["model_name", "variables"],
+                "properties": {
+                    "model_name": {"type": "string"},
+                    "variables": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+        )
+        (step_dir / "verify_prompt.txt").write_text("Verify: {draft_result}\n{ocr_text}")
+
+        flash_provider = MagicMock()
+        flash_provider.call.return_value = {"model_name": "X", "variables": ["a"]}
+        pro_provider = MagicMock()
+        pro_provider.call.return_value = {"wrong_key": "bad"}
+
+        def fake_get_provider(name, config):
+            if config["model"] == "flash-model":
+                return flash_provider
+            return pro_provider
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.get_provider", side_effect=fake_get_provider),
+        ):
+            result, model = _run_step_multipass("mp_step", "ocr text")
+
+        assert result is None
+        assert model == "pro-model"
+        assert pro_provider.call.call_count == 2
+
+    def test_run_formatting_dispatches_multipass(self, tmp_path):
+        """run_formatting uses _run_step_multipass when config has multi_pass=true."""
+        pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
+        ocr_chunks = [{"page_number": 1, "content": "sample text"}]
+        bronze_row = {"doc_id": "doc1", "institution": None}
+
+        client = MagicMock()
+
+        def table_side_effect(name):
+            chain = MagicMock()
+            result_mock = MagicMock()
+            if name == "pipeline":
+                result_mock.data = [pipeline_row]
+            elif name == "ocr_results":
+                result_mock.data = ocr_chunks
+            elif name == "bronze_mapping":
+                result_mock.data = [bronze_row]
+            elif name == "formatting":
+                result_mock.data = []
+            else:
+                result_mock.data = []
+            chain.execute.return_value = result_mock
+            chain.select.return_value = chain
+            chain.update.return_value = chain
+            chain.upsert.return_value = chain
+            chain.delete.return_value = chain
+            chain.eq.return_value = chain
+            return chain
+
+        client.table.side_effect = table_side_effect
+
+        step_result = {"result": "ok"}
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch(
+                "pipeline.formatting.load_step_config",
+                return_value={"provider": "moonshot", "model": "m", "multi_pass": True},
+            ),
+            patch(
+                "pipeline.formatting._run_step_multipass",
+                return_value=(step_result, "pro-model"),
+            ) as mock_mp,
+            patch(
+                "pipeline.formatting.run_step",
+                return_value=(step_result, "kimi-k2.5"),
+            ) as mock_single,
+            patch(
+                "pipeline.formatting.load_step",
+                return_value=(
+                    "prompt",
+                    {},
+                    {"provider": "moonshot", "model": "kimi-k2.5"},
+                ),
+            ),
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_inputs"]),
+            patch("pipeline.formatting.formatting_upsert"),
+        ):
+            result = run_formatting("doc1", client)
+
+        mock_mp.assert_called_once()
+        mock_single.assert_not_called()
+        assert result["status"] == "done"
+        assert result["completed_steps"] == 1
+
+
+class TestRunStepExtraContext:
+    def test_run_step_injects_methodology_context(self, tmp_path):
+        _make_step_dir(tmp_path, "step1", prompt="Context: {methodology_context}\nExtract: {ocr_text}")
+        mock_provider = MagicMock()
+        mock_provider.call.return_value = {"result": "found"}
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.get_provider", return_value=mock_provider),
+        ):
+            result, model = run_step(
+                "step1", "ocr text", extra_context="METHODOLOGY CONTEXT:\nSummary: test\n"
+            )
+
+        prompt_sent = mock_provider.call.call_args[0][0]
+        assert "METHODOLOGY CONTEXT:" in prompt_sent
+        assert "Summary: test" in prompt_sent
+
+    def test_run_step_replaces_placeholder_with_empty_when_no_context(self, tmp_path):
+        _make_step_dir(tmp_path, "step1", prompt="Context: {methodology_context}\nExtract: {ocr_text}")
+        mock_provider = MagicMock()
+        mock_provider.call.return_value = {"result": "found"}
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.get_provider", return_value=mock_provider),
+        ):
+            run_step("step1", "ocr text")
+
+        prompt_sent = mock_provider.call.call_args[0][0]
+        assert "{methodology_context}" not in prompt_sent
+
+    def test_run_formatting_passes_methodology_to_dependent_step(self, tmp_path):
+        """When methodology runs first and inputs depends_on it, context is passed."""
+        pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0}
+        ocr_chunks = [{"page_number": 1, "content": "sample text"}]
+        bronze_row = {"doc_id": "doc1", "institution": None}
+
+        client = MagicMock()
+
+        def table_side_effect(name):
+            chain = MagicMock()
+            result_mock = MagicMock()
+            if name == "pipeline":
+                result_mock.data = [pipeline_row]
+            elif name == "ocr_results":
+                result_mock.data = ocr_chunks
+            elif name == "bronze_mapping":
+                result_mock.data = [bronze_row]
+            elif name == "formatting":
+                result_mock.data = []
+            else:
+                result_mock.data = []
+            chain.execute.return_value = result_mock
+            chain.select.return_value = chain
+            chain.update.return_value = chain
+            chain.upsert.return_value = chain
+            chain.delete.return_value = chain
+            chain.eq.return_value = chain
+            return chain
+
+        client.table.side_effect = table_side_effect
+
+        methodology_result = {
+            "steps_summary": "Combine sub-models.",
+            "steps_detailed": "1. Run CAPM.\n2. Run DDM.",
+            "mermaid_diagram": "flowchart TD\n    A --> B",
+            "sub_models": ["CAPM", "DDM"],
+        }
+        inputs_result = {
+            "model_name": "CMA",
+            "variables": ["risk premium"],
+        }
+
+        call_log: list[tuple[str, str | None]] = []
+
+        def fake_load_step_config(step_name):
+            if step_name == "extract_model_inputs":
+                return {"provider": "moonshot", "model": "m", "depends_on": "extract_model_methodology"}
+            return {"provider": "moonshot", "model": "m"}
+
+        def fake_run_step(step_name, ocr_text, *, institution=None, extra_context=None):
+            call_log.append((step_name, extra_context))
+            if step_name == "extract_model_methodology":
+                return methodology_result, "m"
+            return inputs_result, "m"
+
+        with (
+            patch("pipeline.formatting.STEPS_DIR", tmp_path),
+            patch("pipeline.formatting.load_step_config", side_effect=fake_load_step_config),
+            patch("pipeline.formatting.run_step", side_effect=fake_run_step),
+            patch(
+                "pipeline.formatting.load_step",
+                return_value=("prompt", {}, {"provider": "moonshot", "model": "m"}),
+            ),
+            patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_methodology", "extract_model_inputs"]),
+            patch("pipeline.formatting.formatting_upsert"),
+        ):
+            result = run_formatting("doc1", client)
+
+        assert result["completed_steps"] == 2
+        # Methodology step should have no extra_context
+        assert call_log[0] == ("extract_model_methodology", None)
+        # Inputs step should have methodology context
+        assert call_log[1][0] == "extract_model_inputs"
+        assert "Combine sub-models" in call_log[1][1]
+        assert "CAPM, DDM" in call_log[1][1]

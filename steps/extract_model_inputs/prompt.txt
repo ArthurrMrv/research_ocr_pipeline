@@ -1,0 +1,27 @@
+Task: Analyze the provided financial document and extract the model identification and input variables for the U.S. equity return forecast.
+
+Return exactly one JSON object with this shape:
+{
+  "model_name": "string",
+  "notes_model": "string",
+  "variables": ["string"],
+  "variables_important": ["string"],
+  "assumptions": ["string"]
+}
+
+Rules:
+- Focus specifically on the U.S. equity return forecast approach.
+- Use ONLY information explicitly stated in the report. Do not infer or import outside knowledge.
+- `model_name` must use the exact wording used in the report when available. Do not shorten, normalize, invent, or invent abbreviations. For example, if the report says "Capital Market Model", do not return "CMA".
+- `notes_model` is optional. When present, make it an extremely short list of key words summarizing the approach.
+- `variables` must contain only variables for which the report provides a clear, explicit link between a quantification of that variable as a leaf input and the final U.S. equity return forecast output. You should be able to point to a specific sentence or paragraph in the report that establishes this link, even though you are not asked to cite it. Include variables that enter through sub-models, as long as their contribution to the equity forecast is explicitly described. Exclude pure intermediate calculations where all components are already listed (if X = A + B and A, B are listed, exclude X). When in doubt, INCLUDE the variable. Must be a flat list of strings. Do not shorten, normalize, or invent names, strictly quote.
+- `variables_important` is optional. When present, include only the factors explicitly highlighted as very important in the report. If the report does not distinguish a special narrative, use the important factors already mentioned in `variables` rather than inventing new ones.
+- `assumptions` must list value-type assumptions only: specific numbers assigned to variables, macroeconomic climate assumptions, and baseline values. Keep each assumption short and concise. Use math notation where appropriate (e.g. "inflation = 2%", "GDP growth > 0", "risk-free rate = 3.5%"). If a constraint is implied rather than explicitly stated, append `(implied)` at the end of that element.
+- If the report does not give a formal model name, use the report's closest functional description.
+- When a methodology context is provided below, use it to identify which models and sub-models contribute to the U.S. equity return forecast. Extract variables from ALL relevant constituent models, but ONLY from models that feed into the U.S. equity return prediction. Ignore sub-models used for other asset classes or purposes.
+- Do not include owner, vendor, grouped categories, or any other keys beyond the schema above.
+- Return JSON only. No markdown, no explanation, no code fences.
+
+{methodology_context}
+OCR TEXT:
+{ocr_text}

@@ -4,44 +4,89 @@ import pytest
 from pipeline.formatting import load_step, validate_output
 
 
-class TestExtractModelNameContract:
-    def test_prompt_and_config_capture_fb_requirements(self):
-        prompt, _, config = load_step("extract_model_name")
+class TestExtractModelInputsContract:
+    def test_prompt_contains_variable_focus(self):
+        prompt, _, config = load_step("extract_model_inputs")
 
-        assert (
-            "must explicitly include all stated assumptions, constraints, and conditions relevant to the U.S. equity return forecast"
-            in prompt
-        )
+        assert "variables" in prompt.lower()
+        assert "model_name" in prompt
         assert config["temperature"] == 0
 
     def test_accepts_expected_shape(self):
-        _, schema, _ = load_step("extract_model_name")
+        _, schema, _ = load_step("extract_model_inputs")
 
         payload = {
             "model_name": "Capital Market Model",
-            "notes_model": "Starts from risk factors and uses CAPM as a check.",
-            "steps_summary": "The report derives the U.S. equity return forecast from key risk factors and cross-checks the result with CAPM.",
-            "steps_detailed": "1. The report starts from the relevant risk factors.\n2. It translates those stated inputs into the U.S. equity return forecast.\n3. It explicitly assumes CAPM is used as a consistency check rather than the sole engine.\n4. It applies that constraint when forming the final forecast.",
+            "notes_model": "scenario-based, valuation",
             "variables": ["risk factors", "CAPM"],
-            "variables_important": ["risk factors", "CAPM"],
-            "mermaid_diagram": "flowchart TD\n    A[risk factors] --> B[forecast construction]\n    B --> C[CAPM check]\n    C --> D[U.S. equity return forecast]",
-            "sub_models": ["CAPM"],
+            "variables_important": ["risk factors"],
+            "assumptions": ["inflation = 2%", "steady-state economy (implied)"],
         }
 
-        validate_output(payload, schema, "extract_model_name")
+        validate_output(payload, schema, "extract_model_inputs")
 
-    def test_requires_summaries_and_mermaid(self):
-        _, schema, _ = load_step("extract_model_name")
+    def test_requires_model_name_and_variables(self):
+        _, schema, _ = load_step("extract_model_inputs")
 
         with pytest.raises(jsonschema.ValidationError):
             validate_output(
-                {
-                    "model_name": "Capital Market Model",
-                    "variables": ["risk factors"],
-                },
+                {"model_name": "Capital Market Model"},
                 schema,
-                "extract_model_name",
+                "extract_model_inputs",
             )
+
+    def test_accepts_minimal_required_fields(self):
+        _, schema, _ = load_step("extract_model_inputs")
+
+        payload = {
+            "model_name": "Factor model",
+            "variables": ["risk premium"],
+        }
+
+        validate_output(payload, schema, "extract_model_inputs")
+
+
+class TestExtractModelMethodologyContract:
+    def test_prompt_contains_methodology_focus(self):
+        prompt, _, config = load_step("extract_model_methodology")
+
+        assert "methodology" in prompt.lower()
+        assert "mermaid_diagram" in prompt
+        assert config["temperature"] == 0
+
+    def test_accepts_expected_shape(self):
+        _, schema, _ = load_step("extract_model_methodology")
+
+        payload = {
+            "steps_summary": "The report derives U.S. equity return from risk factors.",
+            "steps_detailed": "1. Start from risk factors.\n2. Apply CAPM check.\n3. Produce forecast.",
+            "mermaid_diagram": "flowchart TD\n    A[risk factors] --> B[forecast]\n    B --> C[CAPM check]\n    C --> D[output]",
+            "sub_models": ["CAPM"],
+            "assumptions": ["r_equity = r_f + beta * ERP", "mean reversion in valuations (implied)"],
+        }
+
+        validate_output(payload, schema, "extract_model_methodology")
+
+    def test_requires_summary_detailed_and_mermaid(self):
+        _, schema, _ = load_step("extract_model_methodology")
+
+        with pytest.raises(jsonschema.ValidationError):
+            validate_output(
+                {"steps_summary": "Summary only"},
+                schema,
+                "extract_model_methodology",
+            )
+
+    def test_accepts_minimal_required_fields(self):
+        _, schema, _ = load_step("extract_model_methodology")
+
+        payload = {
+            "steps_summary": "Simple approach.",
+            "steps_detailed": "1. One step.",
+            "mermaid_diagram": "flowchart TD\n    A --> B",
+        }
+
+        validate_output(payload, schema, "extract_model_methodology")
 
 
 class TestExtractTableContract:

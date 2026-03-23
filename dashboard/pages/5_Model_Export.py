@@ -1,4 +1,4 @@
-"""Model export page — flattened extract_model_name results with CSV download."""
+"""Model export page — merged model inputs + methodology results with CSV download."""
 
 import sys
 from pathlib import Path
@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
 
-from data import clear_all_caches, fetch_extract_model_name_export
+from data import clear_all_caches, fetch_model_export
 
 if st.sidebar.button("🔄 Refresh Data", key="refresh_model_export"):
     clear_all_caches()
@@ -15,13 +15,13 @@ if st.sidebar.button("🔄 Refresh Data", key="refresh_model_export"):
 
 st.title("Model CSV Export")
 st.markdown(
-    "Flat view of `extract_model_name` results for spreadsheet inspection and CSV download."
+    "Merged view of model inputs and methodology results for spreadsheet inspection and CSV download."
 )
 
-results_df = fetch_extract_model_name_export()
+results_df = fetch_model_export()
 
 if results_df.empty:
-    st.warning("No `extract_model_name` results found in the database.")
+    st.warning("No model extraction results found in the database.")
     st.stop()
 
 search_term = st.text_input(
@@ -44,6 +44,6 @@ csv_bytes = filtered_df.to_csv(index=False).encode("utf-8")
 st.download_button(
     "Download CSV",
     data=csv_bytes,
-    file_name="extract_model_name_export.csv",
+    file_name="model_export.csv",
     mime="text/csv",
 )

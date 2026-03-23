@@ -44,6 +44,11 @@
       "type": "array",
       "description": "Optional list of named sub-models or component models mentioned for this extraction target.",
       "items": { "type": "string" }
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "List of assumptions made by the model: variable values, relationships between variables, macroeconomic climate, and other stated or implied constraints. Implied assumptions end with '(implied)'.",
+      "items": { "type": "string" }
     }
   },
   "additionalProperties": false

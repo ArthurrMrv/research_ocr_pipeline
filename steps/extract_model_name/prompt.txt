@@ -9,7 +9,8 @@ Return exactly one JSON object with this shape:
   "variables": ["string"],
   "variables_important": ["string"],
   "mermaid_diagram": "flowchart TD ...",
-  "sub_models": ["string"]
+  "sub_models": ["string"],
+  "assumptions": ["string"]
 }
 
 Rules:
@@ -25,6 +26,7 @@ Rules:
 - The diagram should show the flow from initial variables or risk factors, through any explicit intermediary calculations, decomposition steps, or checks, to the final U.S. equity return output.
 - If intermediary steps are not explicitly given, use a simple direct flow from inputs to final output.
 - `sub_models` is optional. Include it only if specific sub-models or component models are explicitly mentioned.
+- `assumptions` must list each assumption clearly and separately — one assumption per array element. Keep each assumption short and concise. Use math notation where appropriate (e.g. "inflation = 2%", "GDP growth > 0", "r_equity = r_f + beta * ERP"). Include variable values, relationships between variables, macroeconomic climate assumptions, and other stated or implied constraints. If a constraint is implied rather than explicitly stated, append `(implied)` at the end of that element.
 - Do not include owner, vendor, grouped categories, or any other keys beyond the schema above.
 - If the report does not give a formal model name, use the report's closest functional description.
 - Return JSON only. No markdown, no explanation, no code fences.
