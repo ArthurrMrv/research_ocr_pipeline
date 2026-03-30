@@ -21,6 +21,14 @@ MODEL_EXPORT_COLUMNS = [
     "variables_importants",
     "assumptions_values",
     "assumptions_structural",
+    "uses_regressions",
+    "uses_simulations",
+    "uses_averages",
+    "uses_mean_reversion",
+    "assumptions_classified",
+    "forward_or_backward",
+    "forward_backward_explanation",
+    "index_of_forwardness",
 ]
 
 
@@ -150,12 +158,27 @@ def _serialize_bullet_list(values: object) -> str:
     return "\n".join(f"* {item}" for item in items)
 
 
+def _serialize_assumptions(assumptions: object) -> str:
+    """Render classified assumption objects as bullet-pointed lines for CSV export."""
+    if not isinstance(assumptions, list):
+        return ""
+    lines = []
+    for a in assumptions:
+        if isinstance(a, dict):
+            classification = a.get("classification", "?")
+            text = a.get("assumption", "")
+            block = a.get("building_block", "?")
+            lines.append(f"* [{classification}] {text} (re: {block})")
+    return "\n".join(lines)
+
+
 def _build_model_export_df(
     inputs_rows: list[dict],
     methodology_rows: list[dict],
     bronze_rows: list[dict],
+    assumptions_rows: list[dict] | None = None,
 ) -> pd.DataFrame:
-    """Merge extract_model_inputs + extract_model_methodology into export-ready columns."""
+    """Merge extract_model_inputs + extract_model_methodology + extract_model_assumptions into export-ready columns."""
     if not inputs_rows and not methodology_rows:
         return pd.DataFrame(columns=MODEL_EXPORT_COLUMNS)
 
@@ -172,12 +195,17 @@ def _build_model_export_df(
         row.get("doc_id"): row.get("content") or {}
         for row in methodology_rows
     }
+    assumptions_by_doc = {
+        row.get("doc_id"): row.get("content") or {}
+        for row in (assumptions_rows or [])
+    }
 
     all_doc_ids = set(inputs_by_doc) | set(methodology_by_doc)
     records = []
     for doc_id in sorted(all_doc_ids):
         inp = inputs_by_doc.get(doc_id, {})
         meth = methodology_by_doc.get(doc_id, {})
+        assum = assumptions_by_doc.get(doc_id, {})
         variables = inp.get("variables")
         important_variables = inp.get("variables_important")
         records.append(
@@ -192,6 +220,14 @@ def _build_model_export_df(
                 "variables_importants": _serialize_list(important_variables),
                 "assumptions_values": _serialize_bullet_list(inp.get("assumptions")),
                 "assumptions_structural": _serialize_bullet_list(meth.get("assumptions")),
+                "uses_regressions": meth.get("uses_regressions", 0),
+                "uses_simulations": meth.get("uses_simulations", 0),
+                "uses_averages": meth.get("uses_averages", 0),
+                "uses_mean_reversion": meth.get("uses_mean_reversion", 0),
+                "assumptions_classified": _serialize_assumptions(assum.get("assumptions")),
+                "forward_or_backward": assum.get("forward_or_backward", ""),
+                "forward_backward_explanation": assum.get("forward_backward_explanation", ""),
+                "index_of_forwardness": assum.get("index_of_forwardness", ""),
             }
         )
 
@@ -246,7 +282,7 @@ def fetch_mermaid_reports() -> list[dict]:
 
 @st.cache_data(ttl=300)
 def fetch_model_export() -> pd.DataFrame:
-    """Merged extract_model_inputs + extract_model_methodology for CSV export."""
+    """Merged extract_model_inputs + extract_model_methodology + extract_model_assumptions for CSV export."""
     inputs_rows = _query(
         "formatting",
         select="doc_id,content",
@@ -257,8 +293,13 @@ def fetch_model_export() -> pd.DataFrame:
         select="doc_id,content",
         step_name="extract_model_methodology",
     )
+    assumptions_rows = _query(
+        "formatting",
+        select="doc_id,content",
+        step_name="extract_model_assumptions",
+    )
     bronze_rows = _query("bronze_mapping", select="doc_id,doc_name")
-    return _build_model_export_df(inputs_rows, methodology_rows, bronze_rows)
+    return _build_model_export_df(inputs_rows, methodology_rows, bronze_rows, assumptions_rows)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────

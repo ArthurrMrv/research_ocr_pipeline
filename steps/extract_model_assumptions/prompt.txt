@@ -1,0 +1,38 @@
+Task: Analyze the provided financial document and classify all assumptions used in the U.S. equity return forecast model.
+
+You are given context from two prior extraction steps:
+1. Structural assumptions (relationships, functional forms, causal links)
+2. Value-type assumptions (specific numbers, macro conditions, baseline values)
+
+Use both the prior context AND the original document to produce a comprehensive, deduplicated list of classified assumptions.
+
+Return exactly one JSON object with this shape:
+{
+  "assumptions": [
+    {
+      "assumption": "string",
+      "building_block": "string",
+      "classification": "mean-reversion | historical | forward-looking"
+    }
+  ],
+  "forward_or_backward": "forward-looking | backward-looking",
+  "forward_backward_explanation": "string",
+  "index_of_forwardness": 0.0
+}
+
+Rules:
+- Each assumption must be classified as exactly one of: "mean-reversion", "historical", or "forward-looking".
+  - "mean-reversion": the assumption is that a variable reverts to a long-run average or equilibrium value (e.g., we believe CAPE reverts to equilibrium).
+  - "historical": the assumption is based on historical data, past averages, or backward-looking empirical relationships (e.g., we believe GDP growth is going to be the historical 3%).
+  - "forward-looking": the assumption is based on current market pricing, expectations, forecasts, or forward-looking indicators (e.g., because of AI we forecast GDP growth to rise at 5%).
+- `building_block` should name the specific variable, sub-model, or component this assumption relates to (e.g., "earnings growth", "valuation", "dividend yield", "inflation", "risk premium", "interest rates").
+- Deduplicate assumptions that appear in both structural and value-type contexts — keep the more specific version.
+- `forward_or_backward` is your overall judgment of the model's orientation: "forward-looking" if the model primarily relies on expectations, current pricing, or forecasts; "backward-looking" if the model primarily relies on historical data and past averages.
+- `forward_backward_explanation` must be 1-3 sentences explaining the overall judgment.
+- `index_of_forwardness` is a continuous score: -1 = purely backward-looking, 0 = balanced mix, 1 = purely forward-looking.
+- Use ONLY information from the report and the provided context. Do not infer or import outside knowledge.
+- Return JSON only. No markdown, no explanation, no code fences.
+
+{methodology_context}
+OCR TEXT:
+{ocr_text}

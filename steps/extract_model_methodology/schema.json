@@ -5,7 +5,11 @@
   "required": [
     "steps_summary",
     "steps_detailed",
-    "mermaid_diagram"
+    "mermaid_diagram",
+    "uses_regressions",
+    "uses_simulations",
+    "uses_averages",
+    "uses_mean_reversion"
   ],
   "properties": {
     "steps_summary": {
@@ -29,6 +33,26 @@
       "type": "array",
       "description": "Structural assumptions: relationships between variables, functional forms, causal links. Implied assumptions end with '(implied)'.",
       "items": { "type": "string" }
+    },
+    "uses_regressions": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "1 if any sub-model or the main model uses regression techniques (linear, logistic, panel, time-series); 0 otherwise."
+    },
+    "uses_simulations": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "1 if any sub-model or the main model uses simulation techniques (Monte Carlo, scenario simulation, stochastic simulation); 0 otherwise."
+    },
+    "uses_averages": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "1 if any sub-model or the main model uses historical averages, long-run averages, or equilibrium averages as inputs; 0 otherwise."
+    },
+    "uses_mean_reversion": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "1 if any sub-model or the main model assumes mean reversion of any variable (valuations, margins, rates, etc.); 0 otherwise."
     }
   },
   "additionalProperties": false

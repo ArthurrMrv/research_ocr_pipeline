@@ -1,5 +1,5 @@
 {
-  "definition": "Pages about the U.S. equity market return forecast model identification, including the exact model name, the variables or risk factors used as inputs, and any stated or implied variable values or macroeconomic assumptions.",
+  "definition": "Pages about the U.S. equity market return forecast, including the model name, input variables or risk factors, macroeconomic assumptions, and any sub-model or building-block component that feeds into the equity return prediction (e.g., inflation outlook, earnings growth, interest rate forecasts, valuation metrics).",
   "provider": "gemini",
   "model": "gemini-3.1-pro-preview",
   "temperature": 0,

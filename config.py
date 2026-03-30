@@ -3,7 +3,7 @@ from pathlib import Path
 
 OCR_MODEL_ID = "zai-org/GLM-OCR"
 STEPS_DIR = Path(__file__).parent / "steps"
-ACTIVE_STEPS = ["extract_model_methodology", "extract_model_inputs"]
+ACTIVE_STEPS = ["extract_model_methodology", "extract_model_inputs", "extract_model_assumptions"]
 MAX_PAGES_PER_BATCH = 75
 ZAI_MAX_PAGES = 75  # safe batch size for ZAI layout_parsing API (hard limit is 100)
 OCR_PROVIDER = os.environ.get("OCR_PROVIDER", "zai")

@@ -5,7 +5,10 @@ import jsonschema
 import pytest
 
 from pipeline.formatting import (
+    _build_assumptions_context,
+    _build_context,
     _build_methodology_context,
+    _merge_assumption_drafts,
     _merge_drafts,
     _run_step_multipass,
     load_step,
@@ -232,6 +235,7 @@ class TestRunFormatting:
         formatting_rows = [
             {"step_name": "extract_model_inputs", "content": {"result": "ok"}},
             {"step_name": "extract_model_methodology", "content": {"result": "ok"}},
+            {"step_name": "extract_model_assumptions", "content": {"result": "ok"}},
         ]
         client = self._make_client(
             pipeline_row,
@@ -1046,3 +1050,117 @@ class TestRunStepExtraContext:
         assert call_log[1][0] == "extract_model_inputs"
         assert "Combine sub-models" in call_log[1][1]
         assert "CAPM, DDM" in call_log[1][1]
+
+
+class TestBuildAssumptionsContext:
+    def test_full_results_from_both_steps(self):
+        dep_results = {
+            "extract_model_methodology": {
+                "steps_summary": "Combined building blocks.",
+                "sub_models": ["CAPM", "DDM"],
+                "assumptions": ["r_equity = r_f + ERP", "mean reversion (implied)"],
+            },
+            "extract_model_inputs": {
+                "variables": ["inflation", "GDP growth"],
+                "assumptions": ["inflation = 2%", "GDP > 0 (implied)"],
+            },
+        }
+        ctx = _build_assumptions_context(dep_results)
+        assert "Methodology Summary: Combined building blocks." in ctx
+        assert "Sub-models: CAPM, DDM" in ctx
+        assert "r_equity = r_f + ERP" in ctx
+        assert "mean reversion (implied)" in ctx
+        assert "inflation, GDP growth" in ctx
+        assert "inflation = 2%" in ctx
+        assert "GDP > 0 (implied)" in ctx
+
+    def test_methodology_only(self):
+        dep_results = {
+            "extract_model_methodology": {
+                "steps_summary": "Simple approach.",
+                "assumptions": ["growth = 3%"],
+            },
+        }
+        ctx = _build_assumptions_context(dep_results)
+        assert "Methodology Summary: Simple approach." in ctx
+        assert "growth = 3%" in ctx
+        assert "Value-type" not in ctx
+
+    def test_inputs_only(self):
+        dep_results = {
+            "extract_model_inputs": {
+                "variables": ["inflation"],
+                "assumptions": ["inflation = 2%"],
+            },
+        }
+        ctx = _build_assumptions_context(dep_results)
+        assert "inflation" in ctx
+        assert "inflation = 2%" in ctx
+        assert "Methodology Summary" not in ctx
+
+    def test_empty_deps(self):
+        assert _build_assumptions_context({}) == ""
+
+
+class TestBuildContext:
+    def test_dispatches_to_assumptions_context(self):
+        dep_results = {
+            "extract_model_methodology": {"steps_summary": "test"},
+            "extract_model_inputs": {"variables": ["x"]},
+        }
+        ctx = _build_context("extract_model_assumptions", dep_results)
+        assert "PRIOR EXTRACTION CONTEXT:" in ctx
+
+    def test_dispatches_to_methodology_context_by_default(self):
+        dep_results = {
+            "extract_model_methodology": {
+                "steps_summary": "Build blocks.",
+                "sub_models": ["CAPM"],
+            },
+        }
+        ctx = _build_context("extract_model_inputs", dep_results)
+        assert "METHODOLOGY CONTEXT" in ctx
+        assert "Build blocks." in ctx
+
+
+class TestMergeAssumptionDrafts:
+    def test_deduplicates_assumptions(self):
+        drafts = [
+            {
+                "assumptions": [
+                    {"assumption": "CAPE reverts to mean", "building_block": "valuation", "classification": "mean-reversion"},
+                    {"assumption": "GDP = 3%", "building_block": "growth", "classification": "historical"},
+                ],
+                "forward_or_backward": "backward-looking",
+                "forward_backward_explanation": "Relies on history.",
+                "index_of_forwardness": -0.5,
+            },
+            {
+                "assumptions": [
+                    {"assumption": "cape reverts to mean", "building_block": "valuation", "classification": "mean-reversion"},
+                    {"assumption": "AI boosts growth", "building_block": "growth", "classification": "forward-looking"},
+                ],
+                "forward_or_backward": "backward-looking",
+                "forward_backward_explanation": "Relies on history.",
+                "index_of_forwardness": -0.3,
+            },
+        ]
+        merged = _merge_assumption_drafts(drafts)
+        assert len(merged["assumptions"]) == 3
+        assert merged["forward_or_backward"] == "backward-looking"
+        assert merged["index_of_forwardness"] == -0.4
+
+    def test_averages_index(self):
+        drafts = [
+            {"assumptions": [], "forward_or_backward": "forward-looking", "forward_backward_explanation": "a", "index_of_forwardness": 0.8},
+            {"assumptions": [], "forward_or_backward": "forward-looking", "forward_backward_explanation": "a", "index_of_forwardness": 0.4},
+            {"assumptions": [], "forward_or_backward": "backward-looking", "forward_backward_explanation": "b", "index_of_forwardness": 0.2},
+        ]
+        merged = _merge_assumption_drafts(drafts)
+        assert merged["index_of_forwardness"] == round((0.8 + 0.4 + 0.2) / 3, 2)
+
+    def test_handles_empty_drafts(self):
+        drafts = [{"assumptions": [], "forward_or_backward": "", "forward_backward_explanation": "", "index_of_forwardness": 0}]
+        merged = _merge_assumption_drafts(drafts)
+        assert merged["assumptions"] == []
+        assert merged["index_of_forwardness"] == 0

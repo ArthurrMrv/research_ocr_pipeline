@@ -20,7 +20,7 @@ Rules:
 - `notes_model` is optional. When present, make it an extremely short list of key words summarizing the approach.
 - `steps_summary` must be a concise summary of the whole approach. 
 - `steps_detailed` must be a more detailed summary of the whole approach and must explicitly include all stated assumptions, constraints, and conditions relevant to the U.S. equity return forecast. Present it as an ordered step list using '\n(stepNumber)'.
-- `variables` must be the primitive variables. Must be a flat list of strings. Do not shorten, normalize, or invent names, strictly quote.
+- `variables` must be all the primitive variables. Must be a flat list of strings. Do not shorten, normalize, or invent names, strictly quote.
 - `variables_important` is optional. When present, include only the factors explicitly highlighted as very important in the report. If the report does not distinguish a special narrative, use the important factors already mentioned in `variables` rather than inventing new ones.
 - `mermaid_diagram` must be a Mermaid flowchart string.
 - The diagram should show the flow from initial variables or risk factors, through any explicit intermediary calculations, decomposition steps, or checks, to the final U.S. equity return output.

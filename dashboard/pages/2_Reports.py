@@ -160,6 +160,25 @@ with st.expander("📊 Formatting Results", expanded=True):
                     st.markdown("**Assumptions (structural):**")
                     st.write(content["assumptions"])
 
+                technique_flags = ["uses_regressions", "uses_simulations", "uses_averages", "uses_mean_reversion"]
+                active_techniques = [f.replace("uses_", "") for f in technique_flags if content.get(f) == 1]
+                if active_techniques:
+                    st.markdown(f"**Techniques used:** {', '.join(active_techniques)}")
+
+            elif step == "extract_model_assumptions":
+                st.markdown(f"**Overall Orientation:** {content.get('forward_or_backward', 'N/A')}")
+                st.markdown(f"**Explanation:** {content.get('forward_backward_explanation', '')}")
+                st.markdown(f"**Forwardness Index:** {content.get('index_of_forwardness', 'N/A')}")
+
+                assumptions = content.get("assumptions", [])
+                if assumptions:
+                    st.markdown("**Classified Assumptions:**")
+                    for a in assumptions:
+                        classification = a.get("classification", "?")
+                        block = a.get("building_block", "")
+                        text = a.get("assumption", "")
+                        st.markdown(f"- **[{classification}]** {text} _(re: {block})_")
+
             elif step == "extract_table":
                 table_data = content.get("table")
                 if table_data is None:

@@ -63,6 +63,10 @@ class TestExtractModelMethodologyContract:
             "mermaid_diagram": "flowchart TD\n    A[risk factors] --> B[forecast]\n    B --> C[CAPM check]\n    C --> D[output]",
             "sub_models": ["CAPM"],
             "assumptions": ["r_equity = r_f + beta * ERP", "mean reversion in valuations (implied)"],
+            "uses_regressions": 1,
+            "uses_simulations": 0,
+            "uses_averages": 0,
+            "uses_mean_reversion": 1,
         }
 
         validate_output(payload, schema, "extract_model_methodology")
@@ -84,9 +88,130 @@ class TestExtractModelMethodologyContract:
             "steps_summary": "Simple approach.",
             "steps_detailed": "1. One step.",
             "mermaid_diagram": "flowchart TD\n    A --> B",
+            "uses_regressions": 0,
+            "uses_simulations": 0,
+            "uses_averages": 0,
+            "uses_mean_reversion": 0,
         }
 
         validate_output(payload, schema, "extract_model_methodology")
+
+    def test_rejects_invalid_technique_flag_value(self):
+        _, schema, _ = load_step("extract_model_methodology")
+
+        payload = {
+            "steps_summary": "Simple approach.",
+            "steps_detailed": "1. One step.",
+            "mermaid_diagram": "flowchart TD\n    A --> B",
+            "uses_regressions": 2,
+            "uses_simulations": 0,
+            "uses_averages": 0,
+            "uses_mean_reversion": 0,
+        }
+
+        with pytest.raises(jsonschema.ValidationError):
+            validate_output(payload, schema, "extract_model_methodology")
+
+
+class TestExtractModelAssumptionsContract:
+    def test_prompt_contains_classification_focus(self):
+        prompt, _, config = load_step("extract_model_assumptions")
+
+        assert "classification" in prompt.lower()
+        assert "mean-reversion" in prompt
+        assert "historical" in prompt
+        assert "forward-looking" in prompt
+        assert config["temperature"] == 0
+
+    def test_accepts_expected_shape(self):
+        _, schema, _ = load_step("extract_model_assumptions")
+
+        payload = {
+            "assumptions": [
+                {
+                    "assumption": "CAPE reverts to long-run average",
+                    "building_block": "valuation",
+                    "classification": "mean-reversion",
+                },
+                {
+                    "assumption": "GDP growth = historical 3%",
+                    "building_block": "earnings growth",
+                    "classification": "historical",
+                },
+                {
+                    "assumption": "AI drives GDP growth to 5%",
+                    "building_block": "earnings growth",
+                    "classification": "forward-looking",
+                },
+            ],
+            "forward_or_backward": "backward-looking",
+            "forward_backward_explanation": "The model relies mostly on historical averages and mean-reversion assumptions.",
+            "index_of_forwardness": -0.4,
+        }
+
+        validate_output(payload, schema, "extract_model_assumptions")
+
+    def test_requires_all_top_level_fields(self):
+        _, schema, _ = load_step("extract_model_assumptions")
+
+        with pytest.raises(jsonschema.ValidationError):
+            validate_output(
+                {"assumptions": []},
+                schema,
+                "extract_model_assumptions",
+            )
+
+    def test_rejects_invalid_classification(self):
+        _, schema, _ = load_step("extract_model_assumptions")
+
+        payload = {
+            "assumptions": [
+                {
+                    "assumption": "test",
+                    "building_block": "test",
+                    "classification": "speculative",
+                }
+            ],
+            "forward_or_backward": "forward-looking",
+            "forward_backward_explanation": "test",
+            "index_of_forwardness": 0.5,
+        }
+
+        with pytest.raises(jsonschema.ValidationError):
+            validate_output(payload, schema, "extract_model_assumptions")
+
+    def test_rejects_index_out_of_range(self):
+        _, schema, _ = load_step("extract_model_assumptions")
+
+        payload = {
+            "assumptions": [],
+            "forward_or_backward": "forward-looking",
+            "forward_backward_explanation": "test",
+            "index_of_forwardness": 1.5,
+        }
+
+        with pytest.raises(jsonschema.ValidationError):
+            validate_output(payload, schema, "extract_model_assumptions")
+
+    def test_rejects_extra_properties_on_assumption(self):
+        _, schema, _ = load_step("extract_model_assumptions")
+
+        payload = {
+            "assumptions": [
+                {
+                    "assumption": "test",
+                    "building_block": "test",
+                    "classification": "historical",
+                    "extra_field": "not allowed",
+                }
+            ],
+            "forward_or_backward": "backward-looking",
+            "forward_backward_explanation": "test",
+            "index_of_forwardness": -0.2,
+        }
+
+        with pytest.raises(jsonschema.ValidationError):
+            validate_output(payload, schema, "extract_model_assumptions")
 
 
 class TestExtractTableContract:

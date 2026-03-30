@@ -169,6 +169,37 @@ def _merge_drafts(drafts: list[dict]) -> dict:
     }
 
 
+def _merge_assumption_drafts(drafts: list[dict]) -> dict:
+    """Merge N assumption draft extractions by deduplicating and averaging."""
+    all_assumptions: list[dict] = []
+    seen: set[str] = set()
+    for d in drafts:
+        for a in d.get("assumptions", []):
+            key = a.get("assumption", "").strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                all_assumptions.append(a)
+
+    idx_values = [d.get("index_of_forwardness", 0) for d in drafts]
+    avg_index = round(sum(idx_values) / len(drafts), 2) if drafts else 0
+
+    return {
+        "assumptions": all_assumptions,
+        "forward_or_backward": _most_common(
+            [d.get("forward_or_backward", "") for d in drafts]
+        ),
+        "forward_backward_explanation": _most_common(
+            [d.get("forward_backward_explanation", "") for d in drafts]
+        ),
+        "index_of_forwardness": avg_index,
+    }
+
+
+_MERGE_FUNCTIONS: dict[str, object] = {
+    "extract_model_assumptions": _merge_assumption_drafts,
+}
+
+
 def _build_methodology_context(result: dict | None) -> str:
     """Format methodology step result into a context string for dependent steps."""
     if not result:
@@ -177,10 +208,56 @@ def _build_methodology_context(result: dict | None) -> str:
     summary = result.get("steps_summary", "")
     if summary:
         parts.append(f"Summary: {summary}")
+    detailed = result.get("steps_detailed", "")
+    if detailed:
+        parts.append(f"Detailed steps:\n{detailed}")
     sub_models = result.get("sub_models", [])
     if sub_models:
         parts.append(f"Sub-models used: {', '.join(sub_models)}")
     return "\n".join(parts) + "\n"
+
+
+def _build_assumptions_context(dep_results: dict[str, dict]) -> str:
+    """Format methodology + inputs results into context for the assumptions step."""
+    parts = ["PRIOR EXTRACTION CONTEXT:"]
+
+    meth = dep_results.get("extract_model_methodology")
+    if meth:
+        summary = meth.get("steps_summary", "")
+        if summary:
+            parts.append(f"\nMethodology Summary: {summary}")
+        sub_models = meth.get("sub_models", [])
+        if sub_models:
+            parts.append(f"Sub-models: {', '.join(sub_models)}")
+        structural = meth.get("assumptions", [])
+        if structural:
+            parts.append("\nStructural assumptions (from methodology step):")
+            for a in structural:
+                parts.append(f"  - {a}")
+
+    inp = dep_results.get("extract_model_inputs")
+    if inp:
+        variables = inp.get("variables", [])
+        if variables:
+            parts.append(f"\nVariables/inputs identified: {', '.join(variables)}")
+        value_assumptions = inp.get("assumptions", [])
+        if value_assumptions:
+            parts.append("\nValue-type assumptions (from inputs step):")
+            for a in value_assumptions:
+                parts.append(f"  - {a}")
+
+    if len(parts) <= 1:
+        return ""
+    return "\n".join(parts) + "\n"
+
+
+def _build_context(step_name: str, dep_results: dict[str, dict]) -> str:
+    """Build context string for a step from its dependency results."""
+    if step_name == "extract_model_assumptions":
+        return _build_assumptions_context(dep_results)
+    # Default: methodology context (backward compatible for extract_model_inputs)
+    first_result = next(iter(dep_results.values()), None)
+    return _build_methodology_context(first_result)
 
 
 def _load_verify_prompt(step_name: str) -> str:
@@ -227,7 +304,8 @@ def _run_step_multipass(
         return run_step(step_name, ocr_text, institution=institution, extra_context=extra_context)
 
     # Step 2: Merge drafts
-    merged = _merge_drafts(drafts)
+    merge_fn = _MERGE_FUNCTIONS.get(step_name, _merge_drafts)
+    merged = merge_fn(drafts)
 
     # Step 3: Verify with expensive model
     verify_prompt = _load_verify_prompt(step_name)
@@ -466,11 +544,19 @@ def run_formatting(
 
         try:
             step_config = load_step_config(step_name)
-            # Build context from prior step if configured
+            # Build context from prior step(s) if configured
             extra_context = None
             depends_on = step_config.get("depends_on")
-            if depends_on and depends_on in step_results:
-                extra_context = _build_methodology_context(step_results[depends_on])
+            if depends_on:
+                if isinstance(depends_on, str):
+                    depends_on = [depends_on]
+                dep_results = {
+                    dep: step_results[dep]
+                    for dep in depends_on
+                    if dep in step_results
+                }
+                if dep_results:
+                    extra_context = _build_context(step_name, dep_results)
             if step_config.get("multi_pass"):
                 result, model_name = _run_step_multipass(
                     step_name, step_ocr_text, institution=institution, extra_context=extra_context

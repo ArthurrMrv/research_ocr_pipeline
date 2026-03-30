@@ -16,7 +16,7 @@ if st.sidebar.button("🔄 Refresh Data", key="refresh_steps"):
 
 st.title("Step Results")
 
-KNOWN_STEPS = ["extract_model_inputs", "extract_model_methodology", "extract_table"]
+KNOWN_STEPS = ["extract_model_inputs", "extract_model_methodology", "extract_model_assumptions", "extract_table"]
 
 selected_step = st.selectbox("Select a step", KNOWN_STEPS)
 
@@ -88,6 +88,10 @@ elif selected_step == "extract_model_methodology":
                 "doc_name": row.get("doc_name", ""),
                 "institution": row.get("institution", ""),
                 "summary": content.get("steps_summary", ""),
+                "regressions": content.get("uses_regressions", 0),
+                "simulations": content.get("uses_simulations", 0),
+                "averages": content.get("uses_averages", 0),
+                "mean_reversion": content.get("uses_mean_reversion", 0),
             }
         )
     results_df = pd.DataFrame(records)
@@ -109,6 +113,43 @@ elif selected_step == "extract_model_methodology":
             if content.get("assumptions"):
                 st.markdown("**Assumptions (structural):**")
                 st.write(content["assumptions"])
+
+            technique_flags = ["uses_regressions", "uses_simulations", "uses_averages", "uses_mean_reversion"]
+            active_techniques = [f.replace("uses_", "") for f in technique_flags if content.get(f) == 1]
+            if active_techniques:
+                st.markdown(f"**Techniques used:** {', '.join(active_techniques)}")
+
+elif selected_step == "extract_model_assumptions":
+    records = []
+    for _, row in fmt_df.iterrows():
+        content = row.get("content") or {}
+        records.append(
+            {
+                "doc_name": row.get("doc_name", ""),
+                "institution": row.get("institution", ""),
+                "forward_or_backward": content.get("forward_or_backward", ""),
+                "index_of_forwardness": content.get("index_of_forwardness", ""),
+                "assumptions_count": len(content.get("assumptions", [])),
+            }
+        )
+    results_df = pd.DataFrame(records)
+    st.dataframe(results_df, use_container_width=True, hide_index=True)
+
+    for _, row in fmt_df.iterrows():
+        content = row.get("content") or {}
+        label = f"{row.get('doc_name', '')} — {row.get('institution', '')}"
+        with st.expander(label):
+            st.markdown(f"**Orientation:** {content.get('forward_or_backward', 'N/A')}")
+            st.markdown(f"**Explanation:** {content.get('forward_backward_explanation', '')}")
+            st.markdown(f"**Forwardness Index:** {content.get('index_of_forwardness', 'N/A')}")
+            assumptions = content.get("assumptions", [])
+            if assumptions:
+                st.markdown("**Classified Assumptions:**")
+                for a in assumptions:
+                    classification = a.get("classification", "?")
+                    block = a.get("building_block", "")
+                    text = a.get("assumption", "")
+                    st.markdown(f"- **[{classification}]** {text} _(re: {block})_")
 
 elif selected_step == "extract_table":
     records = []

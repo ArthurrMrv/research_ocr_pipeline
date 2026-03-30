@@ -6,7 +6,11 @@ Return exactly one JSON object with this shape:
   "steps_detailed": "string",
   "mermaid_diagram": "flowchart TD ...",
   "sub_models": ["string"],
-  "assumptions": ["string"]
+  "assumptions": ["string"],
+  "uses_regressions": 0,
+  "uses_simulations": 0,
+  "uses_averages": 0,
+  "uses_mean_reversion": 0
 }
 
 Rules:
@@ -19,6 +23,11 @@ Rules:
 - If intermediary steps are not explicitly given, use a simple direct flow from inputs to final output.
 - `sub_models` is optional. Include it only if specific sub-models or component models are explicitly mentioned.
 - `assumptions` must list structural assumptions only: relationships between variables, functional forms, causal links, and model structure choices. Keep each assumption short and concise. Use math notation where appropriate (e.g. "r_equity = r_f + beta * ERP", "dividend growth tracks earnings growth", "mean reversion in valuations"). If a constraint is implied rather than explicitly stated, append `(implied)` at the end of that element.
+- `uses_regressions`: set to 1 if regressions are used anywhere in the methodology (linear regression, logistic regression, panel regression, time-series regression, etc.); 0 otherwise.
+- `uses_simulations`: set to 1 if Monte Carlo simulation, stochastic simulation, or scenario simulation is used anywhere in the methodology; 0 otherwise.
+- `uses_averages`: set to 1 if historical averages, long-run averages, or equilibrium averages are explicitly used as inputs to the model; 0 otherwise.
+- `uses_mean_reversion`: set to 1 if mean reversion is assumed for any variable (e.g., valuations, margins, rates reverting to a long-run level); 0 otherwise.
+- For all four technique flags: if the model combines multiple sub-models and at least one uses the technique, set to 1.
 - Do not include owner, vendor, grouped categories, or any other keys beyond the schema above.
 - Return JSON only. No markdown, no explanation, no code fences.
 

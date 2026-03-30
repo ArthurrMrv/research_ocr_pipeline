@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EquityReturnsModelAssumptions",
+  "type": "object",
+  "required": [
+    "assumptions",
+    "forward_or_backward",
+    "forward_backward_explanation",
+    "index_of_forwardness"
+  ],
+  "properties": {
+    "assumptions": {
+      "type": "array",
+      "description": "Classified assumptions combining structural and value-type assumptions from the model.",
+      "items": {
+        "type": "object",
+        "required": ["assumption", "building_block", "classification"],
+        "properties": {
+          "assumption": {
+            "type": "string",
+            "description": "The assumption text, kept concise."
+          },
+          "building_block": {
+            "type": "string",
+            "description": "Which variable or building block this assumption relates to (e.g., earnings growth, valuation, inflation, dividend yield)."
+          },
+          "classification": {
+            "type": "string",
+            "enum": ["mean-reversion", "historical", "forward-looking"],
+            "description": "Exactly one classification: mean-reversion (variable reverts to equilibrium), historical (based on past data/averages), or forward-looking (based on expectations/forecasts/current pricing)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "forward_or_backward": {
+      "type": "string",
+      "enum": ["forward-looking", "backward-looking"],
+      "description": "Overall model-level orientation judgment."
+    },
+    "forward_backward_explanation": {
+      "type": "string",
+      "description": "Brief explanation (1-3 sentences) of why the model is classified as forward- or backward-looking."
+    },
+    "index_of_forwardness": {
+      "type": "number",
+      "minimum": -1,
+      "maximum": 1,
+      "description": "Numeric judgment from -1 (fully backward-looking) to 1 (fully forward-looking)."
+    }
+  },
+  "additionalProperties": false
+}

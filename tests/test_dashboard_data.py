@@ -4,7 +4,7 @@ from dashboard import data
 
 
 class TestModelExport:
-    def test_build_model_export_df_merges_both_steps(self):
+    def test_build_model_export_df_merges_all_steps(self):
         inputs_rows = [
             {
                 "doc_id": "doc-1",
@@ -25,28 +25,45 @@ class TestModelExport:
                     "steps_detailed": "1. Project macro inputs\n2. Estimate earnings\n3. Combine blocks",
                     "mermaid_diagram": "flowchart TD\n    A --> B",
                     "assumptions": ["r_equity = r_f + ERP", "mean reversion (implied)"],
+                    "uses_regressions": 1,
+                    "uses_simulations": 0,
+                    "uses_averages": 1,
+                    "uses_mean_reversion": 1,
+                },
+            }
+        ]
+        assumptions_rows = [
+            {
+                "doc_id": "doc-1",
+                "content": {
+                    "assumptions": [
+                        {"assumption": "CAPE reverts to mean", "building_block": "valuation", "classification": "mean-reversion"},
+                    ],
+                    "forward_or_backward": "backward-looking",
+                    "forward_backward_explanation": "Relies on historical averages.",
+                    "index_of_forwardness": -0.4,
                 },
             }
         ]
         bronze_rows = [{"doc_id": "doc-1", "doc_name": "JPM_2024-01-01.pdf"}]
 
-        result = data._build_model_export_df(inputs_rows, methodology_rows, bronze_rows)
+        result = data._build_model_export_df(inputs_rows, methodology_rows, bronze_rows, assumptions_rows)
 
         assert list(result.columns) == data.MODEL_EXPORT_COLUMNS
-        assert result.to_dict("records") == [
-            {
-                "document_name": "JPM_2024-01-01.pdf",
-                "model_name": "Capital Market Model",
-                "notes_model": "scenario-based, valuation",
-                "variables": "inflation, real GDP growth, dividend yield",
-                "variables_nb": 3,
-                "steps_summary": "Build blocks are combined into expected return.",
-                "steps_detailed": "1. Project macro inputs\n2. Estimate earnings\n3. Combine blocks",
-                "variables_importants": "inflation, dividend yield",
-                "assumptions_values": "* inflation = 2%\n* steady GDP growth (implied)",
-                "assumptions_structural": "* r_equity = r_f + ERP\n* mean reversion (implied)",
-            }
-        ]
+        record = result.to_dict("records")[0]
+        assert record["document_name"] == "JPM_2024-01-01.pdf"
+        assert record["model_name"] == "Capital Market Model"
+        assert record["variables"] == "inflation, real GDP growth, dividend yield"
+        assert record["variables_nb"] == 3
+        assert record["assumptions_values"] == "* inflation = 2%\n* steady GDP growth (implied)"
+        assert record["assumptions_structural"] == "* r_equity = r_f + ERP\n* mean reversion (implied)"
+        assert record["uses_regressions"] == 1
+        assert record["uses_simulations"] == 0
+        assert record["uses_averages"] == 1
+        assert record["uses_mean_reversion"] == 1
+        assert "[mean-reversion] CAPE reverts to mean" in record["assumptions_classified"]
+        assert record["forward_or_backward"] == "backward-looking"
+        assert record["index_of_forwardness"] == -0.4
 
     def test_build_model_export_df_handles_missing_steps(self):
         inputs_rows = [
@@ -71,8 +88,16 @@ class TestModelExport:
         assert result.loc[0, "variables_importants"] == ""
         assert result.loc[0, "assumptions_values"] == ""
         assert result.loc[0, "assumptions_structural"] == ""
+        assert result.loc[0, "uses_regressions"] == 0
+        assert result.loc[0, "uses_simulations"] == 0
+        assert result.loc[0, "uses_averages"] == 0
+        assert result.loc[0, "uses_mean_reversion"] == 0
+        assert result.loc[0, "assumptions_classified"] == ""
+        assert result.loc[0, "forward_or_backward"] == ""
+        assert result.loc[0, "forward_backward_explanation"] == ""
+        assert result.loc[0, "index_of_forwardness"] == ""
 
-    def test_fetch_model_export_queries_both_steps(self, monkeypatch):
+    def test_fetch_model_export_queries_all_steps(self, monkeypatch):
         calls = []
 
         def fake_query(table: str, select: str = "*", **eq_filters):
@@ -98,6 +123,8 @@ class TestModelExport:
                         },
                     }
                 ]
+            if table == "formatting" and eq_filters.get("step_name") == "extract_model_assumptions":
+                return []
             if table == "bronze_mapping":
                 return [{"doc_id": "doc-3", "doc_name": "MSCI_2024-06-01.pdf"}]
             raise AssertionError(f"Unexpected query: {table} {eq_filters}")
@@ -114,3 +141,4 @@ class TestModelExport:
         step_names_queried = [c[1] for c in calls if c[0] == "formatting"]
         assert "extract_model_inputs" in step_names_queried
         assert "extract_model_methodology" in step_names_queried
+        assert "extract_model_assumptions" in step_names_queried
