@@ -6,3 +6,4 @@ class OpenAIProvider(OpenAICompatibleProvider):
 
     _provider_label = "OpenAI"
     _env_var = "OPENAI_API_KEY"
+    _base_url = "https://eu.api.openai.com/v1"

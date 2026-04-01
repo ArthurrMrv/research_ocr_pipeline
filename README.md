@@ -66,8 +66,8 @@ flowchart TD
 
 | Provider | Key | Notes |
 |----------|-----|-------|
-| `local` (default) | — | HuggingFace `zai-org/GLM-OCR`, runs on-device |
-| `zai` | `ZAI_API_KEY` | ZAI cloud layout-parsing API |
+| `zai` (default) | `ZAI_API_KEY` | ZAI cloud layout-parsing API (`glm-ocr`) |
+| `local` | — | HuggingFace `zai-org/GLM-OCR`, runs on-device |
 
 Selected via `OCR_PROVIDER` env var.
 
@@ -92,8 +92,9 @@ flowchart TD
 **Scout output format:**
 ```json
 {
-  "extract_model_name": 0.91,
-  "extract_table": 0.08
+  "extract_model_methodology": 0.91,
+  "extract_model_inputs": 0.84,
+  "extract_model_assumptions": 0.79
 }
 ```
 
@@ -128,11 +129,24 @@ flowchart TD
 
 ## Active Steps
 
-| Step | Provider | Model | Max Tokens | Purpose |
-|------|----------|-------|-----------|---------|
-| `extract_model_name` | moonshot | kimi-k2.5 | 1024 | Extract AI model names and specs |
-| `extract_table` | moonshot | kimi-k2.5 | 4096 | Extract performance/benchmark tables |
-| `_scout_page` | gemini | gemini-3.1-flash-lite-preview | 256 | Score one page for each extraction step |
+`ACTIVE_STEPS` in `config.py` currently enables:
+
+- `extract_model_methodology`
+- `extract_model_inputs`
+- `extract_model_assumptions`
+
+### Model usage by stage
+
+| Stage | Step | Provider | Model(s) | Calls per document | Model input |
+|------|------|----------|----------|--------------------|-------------|
+| OCR | `ocr` with `OCR_PROVIDER=zai` (default) | ZAI | `glm-ocr` | `ceil(total_pages / 75)` calls for full OCR (plus optional re-OCR batches for empty pages) | **Pages only** (PDF bytes) |
+| OCR | `ocr` with `OCR_PROVIDER=local` | HuggingFace local | `zai-org/GLM-OCR` | `1` call per page | **Pages only** (rendered page image) |
+| Scout | `_scout_page` | gemini | `gemini-3.1-flash-lite-preview` | `1` call per non-empty OCR page (retry once on schema/key mismatch, so up to `2 * non_empty_pages`) | **Text only** (one page of OCR text at a time) |
+| Formatting | `extract_model_methodology` | gemini | `gemini-3.1-pro-preview` | `1` call normally (up to `2` with schema-retry) | **Text only** (concatenated shortlisted OCR page text) |
+| Formatting (multi-pass) | `extract_model_inputs` | gemini | drafts: `gemini-2.0-flash` (3 runs), verify: `gemini-3.1-pro-preview` | Typical: `4` calls (`3` draft + `1` verify). Worst case with verify retry: `5` calls. If all drafts fail, fallback is single-pass pro (`1-2` calls). | **Text only** (shortlisted OCR text + methodology context text) |
+| Formatting (multi-pass) | `extract_model_assumptions` | gemini | drafts: `gemini-2.0-flash` (3 runs), verify: `gemini-3.1-pro-preview` | Typical: `4` calls (`3` draft + `1` verify). Worst case with verify retry: `5` calls. If all drafts fail, fallback is single-pass pro (`1-2` calls). | **Text only** (shortlisted OCR text + methodology/inputs context text) |
+
+`pages_given` persisted in the `formatting` table records exactly which page numbers were provided to each formatting step.
 
 Steps are defined under `steps/<step_name>/` with three files: `config.json`, `schema.json`, `prompt.txt`. Company-specific prompts can be placed in `steps/<step_name>/prompts/<CompanyName>.txt`.
 Each extraction step `config.json` should also include a `definition` field used by `_scout_page` to score page relevance.
@@ -258,21 +272,25 @@ sequenceDiagram
     Scout->>Supabase: GET ocr_results page rows
     loop for each non-empty page
         Scout->>Gemini: "score this page for each extraction step"
-        Gemini-->>Scout: {"extract_model_name":0.82,"extract_table":0.05}
+        Gemini-->>Scout: {"extract_model_methodology":0.82,"extract_model_inputs":0.76,"extract_model_assumptions":0.64}
         Scout->>Supabase: UPSERT scout_page_scores
     end
     Scout->>Supabase: UPDATE pipeline.last_scout
 
     CLI->>Surgeon: run_formatting(doc_id)
     Surgeon->>Supabase: GET scout_page_scores
-    Surgeon->>Surgeon: extract_model_name → keep only pages >= threshold
-    Surgeon->>Kimi: "extract model names" + shortlisted pages
-    Kimi-->>Surgeon: {"model_name": "Blackwell B200", ...}
-    Surgeon->>Supabase: UPSERT formatting (step=extract_model_name)
-    Surgeon->>Surgeon: extract_table → keep only pages >= threshold
-    Surgeon->>Kimi: "extract table" + shortlisted pages
-    Kimi-->>Surgeon: {"tables": [...]}
-    Surgeon->>Supabase: UPSERT formatting (step=extract_table)
+    Surgeon->>Surgeon: extract_model_methodology → keep only pages >= threshold
+    Surgeon->>Gemini Pro: methodology extraction on shortlisted text
+    Gemini Pro-->>Surgeon: {"steps_summary":"...", ...}
+    Surgeon->>Supabase: UPSERT formatting (step=extract_model_methodology)
+    Surgeon->>Surgeon: extract_model_inputs (multi-pass) → shortlisted text + methodology context
+    Surgeon->>Gemini Flash: 3 draft runs
+    Surgeon->>Gemini Pro: verify merged draft
+    Surgeon->>Supabase: UPSERT formatting (step=extract_model_inputs)
+    Surgeon->>Surgeon: extract_model_assumptions (multi-pass) → shortlisted text + dependency context
+    Surgeon->>Gemini Flash: 3 draft runs
+    Surgeon->>Gemini Pro: verify merged draft
+    Surgeon->>Supabase: UPSERT formatting (step=extract_model_assumptions)
     Surgeon->>Supabase: UPDATE pipeline.last_formatting
 ```
 
@@ -312,7 +330,7 @@ steps/my_step/
 
 2. Add `"my_step"` to `ACTIVE_STEPS` in `config.py`
 
-3. Update `steps/_scout_page/prompt.txt` and `pipeline/scout.py` step descriptions if the new step needs scout relevance scoring
+3. Add a `definition` in `steps/<step_name>/config.json`; scout reads this field for relevance scoring automatically.
 
 That's it — the scout will automatically find the relevant pages, and the surgeon will run your step on the filtered text.
 
@@ -321,7 +339,7 @@ That's it — the scout will automatically find the relevant pages, and the surg
 1. **Bronze — Ingest** registers PDF files in Supabase with a stable, deterministic ID (UUID5 of the absolute file path). Running it twice on the same file is a no-op.
 2. **Silver — OCR** renders each PDF page to an image and runs it through [GLM-OCR](https://huggingface.co/zai-org/GLM-OCR) to extract raw text. Results are stored per-page.
 3. **Silver — Scout** scores each OCR-successful page for each extraction step and persists those page-level relevance scores.
-4. **Gold — Formatting** takes only the shortlisted OCR pages for each step and runs the extraction prompts (Kimi K2.5 via Moonshot API).
+4. **Gold — Formatting** takes only the shortlisted OCR pages for each step and runs extraction prompts with Gemini models (single-pass and multi-pass depending on step config).
 
 Pipeline state is tracked in Supabase PostgreSQL so every stage is resumable and idempotent.
 
@@ -340,11 +358,12 @@ ingestion_pipeline_reports/
 │   ├── ingest.py         Bronze layer — register PDFs
 │   ├── ocr.py            Silver layer — page-level GLM-OCR extraction
 │   ├── scout.py          Silver layer — page-level relevance scoring
-│   └── formatting.py     Gold layer — Kimi K2.5 structured output
+│   └── formatting.py     Gold layer — structured output extraction
 └── steps/
     ├── _scout_page/
-    ├── extract_model_name/
-    └── extract_table/
+    ├── extract_model_methodology/
+    ├── extract_model_inputs/
+    └── extract_model_assumptions/
 ```
 
 ### Database schema (Supabase PostgreSQL)
@@ -394,7 +413,7 @@ uv run python main.py ./reports/ --parse-date 2024-06-01
    - Add a `definition` string in `config.json`; scout uses it as the page-level relevance description for that step.
 2. Register the step in `config.py`:
    ```python
-   ACTIVE_STEPS = ["extract_model_name", "extract_table", "<step_name>"]
+   ACTIVE_STEPS = ["extract_model_methodology", "extract_model_inputs", "extract_model_assumptions", "<step_name>"]
    ```
 3. Results appear in the `formatting` table under `step_name = "<step_name>"`.
 
