@@ -1,7 +1,7 @@
 {
   "definition": "Pages about the U.S. equity market return forecast methodology, including step-by-step process descriptions, intermediary calculations, decomposition steps, consistency checks, sub-models, and structural relationships between variables.",
-  "provider": "gemini",
-  "model": "gemini-3.1-pro-preview",
+  "provider": "openai",
+  "model": "gpt-5.4",
   "temperature": 0,
   "max_tokens": 8000
 }

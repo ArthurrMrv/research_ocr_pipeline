@@ -4,11 +4,11 @@ All functions return new DataFrames — no mutation.
 All queries use .select() only — zero write operations.
 """
 
-import os
-
 import pandas as pd
 import streamlit as st
 from supabase import Client, create_client
+
+from auth import get_secret
 
 MODEL_EXPORT_COLUMNS = [
     "document_name",
@@ -35,8 +35,8 @@ MODEL_EXPORT_COLUMNS = [
 @st.cache_resource
 def get_client() -> Client:
     """Cached Supabase client (one per app lifetime)."""
-    url = os.environ["SUPABASE_URL"]
-    key = os.environ["SUPABASE_SERVICE_KEY"]
+    url = get_secret("SUPABASE_URL")
+    key = get_secret("SUPABASE_SERVICE_KEY")
     return create_client(url, key)
 
 

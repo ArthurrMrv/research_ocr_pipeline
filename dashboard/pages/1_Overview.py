@@ -9,7 +9,11 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+# AUTH DISABLED FOR DEV — re-enable for production
+# from auth import require_auth
 from data import clear_all_caches, fetch_overview
+
+# require_auth()
 
 if st.sidebar.button("🔄 Refresh Data", key="refresh_overview"):
     clear_all_caches()

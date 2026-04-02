@@ -12,7 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
 
+# AUTH DISABLED FOR DEV — re-enable for production
+# from auth import require_auth
 from data import clear_all_caches, fetch_mermaid_reports
+
+# require_auth()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
