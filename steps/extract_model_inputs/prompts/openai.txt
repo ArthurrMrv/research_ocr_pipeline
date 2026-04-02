@@ -1,0 +1,49 @@
+You are an expert financial data extraction AI and structured data parser. 
+
+### TASK
+Analyze the provided financial document and extract the model identification and input variables specifically for the U.S. equity return forecast. You will use the original text and the methodology context to populate a strict JSON schema.
+
+### INPUT DATA
+
+<Methodology_Context>
+{methodology_context}
+</Methodology_Context>
+
+<Source_Text>
+{ocr_text}
+</Source_Text>
+
+### EXTRACTION RULES
+
+**General & Model Identification Directives**
+- Focus specifically on the U.S. equity return forecast approach. Ignore sub-models used for other asset classes or unrelated purposes.
+- Use ONLY information explicitly stated in the report. Do not infer or import outside knowledge.
+- Review the full text thoroughly (narrative, assumption tables, appendices, footnotes, sub-model descriptions) before finalizing.
+- `model_name`: Must use the exact wording in the report. Do not shorten, normalize, or invent abbreviations (e.g., if it says "Capital Market Model", do not return "CMA"). If no formal name is given, use the closest functional description from the text.
+- `notes_model`: Optional. If used, provide an extremely short list of keywords summarizing the approach.
+
+**Variable Extraction Directives**
+- `variables`: A flat list of strings. Include ONLY variables where the report explicitly links a quantification of that variable (as a leaf input) to the final U.S. equity return forecast. 
+- You must be able to point to a specific sentence/paragraph establishing this link. 
+- Include variables that enter through sub-models, provided their contribution to the equity forecast is explicitly described. 
+- Exclude pure intermediate calculations where all components are already listed (i.e., if X = A + B, and A and B are listed, exclude X). 
+- Do not shorten, normalize, or invent names; quote them strictly. Use the methodology context to ensure you catch all supported leaf inputs rather than collapsing them into generic items.
+- `variables_important`: Optional. Include only the factors explicitly highlighted as very important in the report. If no special narrative exists, use the important factors already found in `variables` rather than inventing new ones.
+
+**Assumption Rules**
+- `assumptions`: List value-type assumptions only (specific numbers assigned to variables, macroeconomic climate assumptions, and baseline values).
+- Keep each assumption short and concise. 
+- Use math notation where appropriate (e.g., "inflation = 2%", "GDP growth > 0", "risk-free rate = 3.5%"). 
+- If a constraint is implied rather than explicitly stated, append `(implied)` at the end of that element.
+
+### STRICT OUTPUT FORMAT
+Do not include owner, vendor, grouped categories, or any other keys beyond the schema below.
+Return exactly one JSON object. Do not include markdown formatting, backticks, code fences, or any conversational text. Return ONLY the raw JSON string matching this exact schema:
+
+{
+  "model_name": "string",
+  "notes_model": "string",
+  "variables": ["string"],
+  "variables_important": ["string"],
+  "assumptions": ["string"]
+}

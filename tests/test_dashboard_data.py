@@ -142,3 +142,51 @@ class TestModelExport:
         assert "extract_model_inputs" in step_names_queried
         assert "extract_model_methodology" in step_names_queried
         assert "extract_model_assumptions" in step_names_queried
+
+
+class TestFetchMermaidReports:
+    def test_sanitizes_diagrams_before_returning_reports(self, monkeypatch):
+        def fake_query(table: str, select: str = "*", **eq_filters):
+            if table == "formatting" and eq_filters.get("step_name") == "extract_model_methodology":
+                return [
+                    {
+                        "doc_id": "doc-1",
+                        "content": {
+                            "steps_summary": "Summary",
+                            "mermaid_diagram": "flowCchart TD A --> B",
+                        },
+                    }
+                ]
+            if table == "formatting" and eq_filters.get("step_name") == "extract_model_inputs":
+                return [
+                    {
+                        "doc_id": "doc-1",
+                        "content": {
+                            "model_name": "Model",
+                        },
+                    }
+                ]
+            if table == "bronze_mapping":
+                return [
+                    {
+                        "doc_id": "doc-1",
+                        "doc_name": "Doc.pdf",
+                        "institution": "Firm",
+                    }
+                ]
+            raise AssertionError(f"Unexpected query: {table} {eq_filters}")
+
+        monkeypatch.setattr(data, "_query", fake_query)
+        data.fetch_mermaid_reports.clear()
+
+        reports = data.fetch_mermaid_reports()
+
+        assert reports == [
+            {
+                "doc_name": "Doc.pdf",
+                "institution": "Firm",
+                "model_name": "Model",
+                "mermaid_diagram": "flowchart TD\nA --> B",
+                "steps_summary": "Summary",
+            }
+        ]

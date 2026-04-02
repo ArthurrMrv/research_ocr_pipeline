@@ -1,0 +1,33 @@
+Task: You are given a draft extraction of model inputs for a U.S. equity return forecast, produced by merging multiple preliminary extractions. Your job is to verify each item against the original document text and produce the final, accurate JSON output.
+
+Draft extraction (merged from multiple passes):
+{draft_result}
+
+Instructions:
+1. Review each variable in the "variables" list against the OCR text below. Keep ONLY variables for which the report provides a clear, explicit link between a quantification of that variable as a leaf input and the final U.S. equity return forecast output. You should be able to point to a specific sentence or paragraph establishing this link. Include variables that enter through sub-models, as long as their contribution to the equity forecast is explicitly described. Remove duplicates and near-duplicates (keep the most faithful wording from the report). Only include a variable if you can point to a specific sentence or paragraph in the report that establishes its link to the U.S. equity return forecast. Do not include variables mentioned in passing or used only in unrelated contexts.
+2. Filter out intermediates and redundancies: remove a variable if it is a direct arithmetic combination of other variables already in the list (if X = A + B and both A and B are listed, remove X), or if it is derived from other listed variables. When in doubt, REMOVE the variable.
+3. Review "variables_important" — keep only those that the report explicitly highlights as key or critical factors. Remove any not present in the final "variables" list.
+4. Review "assumptions" — keep only value-type assumptions (specific numbers, macro conditions, baseline values) that are stated or clearly implied in the report. Use math notation where appropriate. Append "(implied)" to constraints that are not explicitly stated.
+5. For "model_name", use the exact wording from the report. If the draft has the correct name, keep it.
+6. For "notes_model", provide an extremely short list of key words summarizing the approach, only if applicable.
+7. After the filtering steps above, do one full rescan of the OCR text for supported variables or value assumptions that the draft may have missed. Check methodology sections, assumption tables, appendices, footnotes, sub-model descriptions, and building-block components. Add them only if they satisfy the same explicit-link and leaf-input rules above.
+
+Return exactly one JSON object with this shape:
+{
+  "model_name": "string",
+  "notes_model": "string",
+  "variables": ["string"],
+  "variables_important": ["string"],
+  "assumptions": ["string"]
+}
+
+Rules:
+- Use ONLY information explicitly stated in the report. Do not infer or import outside knowledge.
+- Do not shorten, normalize, or invent variable names — strictly quote from the report.
+- When a methodology context is provided below, use it to identify which models and sub-models contribute to the U.S. equity return forecast. Ensure variables from ALL relevant constituent models are included, but ONLY from models that feed into the U.S. equity return prediction. Remove variables from sub-models used for other asset classes or purposes.
+- Use the methodology context and draft as recall aids, but keep only items supported by the OCR text and relevant prior context.
+- Return JSON only. No markdown, no explanation, no code fences.
+
+{methodology_context}
+OCR TEXT:
+{ocr_text}

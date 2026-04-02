@@ -40,6 +40,24 @@ from pipeline.tracker import (
 )
 
 
+def _resolve_prompt(step_dir, provider: str, filename: str = "default.txt") -> str | None:
+    """Resolve a prompt file using provider-specific override with fallback.
+
+    Lookup order: prompts/{provider}.txt -> prompts/default.txt -> legacy prompt.txt
+    For verify prompts, pass filename="default.txt" and use the verify_prompts/ subdirectory.
+    """
+    prompts_dir = step_dir / "prompts" if filename == "default.txt" else step_dir
+    provider_path = prompts_dir / f"{provider}.txt"
+    if provider_path.exists():
+        return provider_path.read_text(encoding="utf-8")
+    default_path = prompts_dir / "default.txt"
+    if default_path.exists():
+        return default_path.read_text(encoding="utf-8")
+    # Legacy fallback: prompt.txt in step root
+    legacy = step_dir / "prompt.txt"
+    return legacy.read_text(encoding="utf-8") if legacy.exists() else None
+
+
 def load_step(
     step_name: str, *, institution: str | None = None
 ) -> tuple[str | None, dict, dict]:
@@ -47,30 +65,36 @@ def load_step(
     Load prompt text, JSON schema, and config for a step folder.
     Returns (prompt_text, schema_dict, config_dict).
 
-    If config has "per_company": true and a institution is given,
-    looks for a company-specific prompt in prompts/{institution}.txt
-    (case-insensitive). Returns prompt_text=None if per_company is true
-    but no matching prompt file is found.
+    Prompt lookup order:
+      1. prompts/{provider}.txt  (provider-specific)
+      2. prompts/default.txt     (default prompt)
+      3. prompt.txt              (legacy fallback)
+
+    If config has "per_company": true and an institution is given,
+    looks for company-specific prompts first:
+      prompts/{institution}_{provider}.txt -> prompts/{institution}.txt
+    then falls back to the standard provider lookup.
+    Returns prompt_text=None if per_company is true but no matching prompt is found.
     """
     step_dir = STEPS_DIR / step_name
     schema = json.loads((step_dir / "schema.json").read_text(encoding="utf-8"))
     config = load_step_config(step_name)
+    provider = config.get("provider", "")
 
     is_per_company = config.get("per_company", False)
 
     if is_per_company and institution:
         prompts_dir = step_dir / "prompts"
-        prompt_text = _find_company_prompt(prompts_dir, institution)
+        # Try company+provider, then company-only
+        prompt_text = _find_company_prompt(prompts_dir, institution, provider=provider)
         if prompt_text is None:
-            # Try default fallback prompt.txt
-            fallback = step_dir / "prompt.txt"
-            prompt_text = fallback.read_text(encoding="utf-8") if fallback.exists() else None
+            prompt_text = _find_company_prompt(prompts_dir, institution)
+        if prompt_text is None:
+            prompt_text = _resolve_prompt(step_dir, provider)
     elif is_per_company and not institution:
-        # per_company step but no company name — use fallback
-        fallback = step_dir / "prompt.txt"
-        prompt_text = fallback.read_text(encoding="utf-8") if fallback.exists() else None
+        prompt_text = _resolve_prompt(step_dir, provider)
     else:
-        prompt_text = (step_dir / "prompt.txt").read_text(encoding="utf-8")
+        prompt_text = _resolve_prompt(step_dir, provider)
 
     return prompt_text, schema, config
 
@@ -81,11 +105,17 @@ def load_step_config(step_name: str) -> dict:
     return json.loads((step_dir / "config.json").read_text(encoding="utf-8"))
 
 
-def _find_company_prompt(prompts_dir, institution: str) -> str | None:
-    """Case-insensitive lookup for prompts/{institution}.txt."""
+def _find_company_prompt(
+    prompts_dir, institution: str, *, provider: str | None = None
+) -> str | None:
+    """Case-insensitive lookup for company prompts.
+
+    If provider is given, looks for {institution}_{provider}.txt first.
+    Otherwise looks for {institution}.txt.
+    """
     if not prompts_dir.exists():
         return None
-    target = institution.lower()
+    target = f"{institution}_{provider}".lower() if provider else institution.lower()
     for path in prompts_dir.iterdir():
         if path.stem.lower() == target and path.suffix == ".txt":
             return path.read_text(encoding="utf-8")
@@ -260,12 +290,26 @@ def _build_context(step_name: str, dep_results: dict[str, dict]) -> str:
     return _build_methodology_context(first_result)
 
 
-def _load_verify_prompt(step_name: str) -> str:
-    """Load verify_prompt.txt from the step directory."""
-    verify_path = STEPS_DIR / step_name / "verify_prompt.txt"
-    if verify_path.exists():
-        return verify_path.read_text(encoding="utf-8")
-    raise FileNotFoundError(f"No verify_prompt.txt found for step '{step_name}'")
+def _load_verify_prompt(step_name: str, provider: str = "") -> str:
+    """Load verify prompt from verify_prompts/ subfolder.
+
+    Lookup order: verify_prompts/{provider}.txt -> verify_prompts/default.txt
+                  -> legacy verify_prompt.txt
+    """
+    step_dir = STEPS_DIR / step_name
+    verify_dir = step_dir / "verify_prompts"
+    if verify_dir.exists():
+        provider_path = verify_dir / f"{provider}.txt"
+        if provider_path.exists():
+            return provider_path.read_text(encoding="utf-8")
+        default_path = verify_dir / "default.txt"
+        if default_path.exists():
+            return default_path.read_text(encoding="utf-8")
+    # Legacy fallback
+    legacy = step_dir / "verify_prompt.txt"
+    if legacy.exists():
+        return legacy.read_text(encoding="utf-8")
+    raise FileNotFoundError(f"No verify prompt found for step '{step_name}'")
 
 
 def _run_step_multipass(
@@ -308,7 +352,7 @@ def _run_step_multipass(
     merged = merge_fn(drafts)
 
     # Step 3: Verify with expensive model
-    verify_prompt = _load_verify_prompt(step_name)
+    verify_prompt = _load_verify_prompt(step_name, provider=provider_name)
     verify_prompt = verify_prompt.replace("{methodology_context}", extra_context or "")
     pro_provider = get_provider(provider_name, config)
     filled_verify = verify_prompt.replace(

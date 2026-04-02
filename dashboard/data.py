@@ -8,7 +8,12 @@ import pandas as pd
 import streamlit as st
 from supabase import Client, create_client
 
-from auth import get_secret
+try:
+    from auth import get_secret
+except ModuleNotFoundError:
+    from auth import get_secret
+
+from mermaid_utils import sanitize_mermaid_diagram
 
 MODEL_EXPORT_COLUMNS = [
     "document_name",
@@ -264,7 +269,7 @@ def fetch_mermaid_reports() -> list[dict]:
     reports = []
     for row in methodology_rows:
         content = row.get("content") or {}
-        diagram = content.get("mermaid_diagram")
+        diagram = sanitize_mermaid_diagram(content.get("mermaid_diagram"))
         if not diagram:
             continue
         doc_id = row.get("doc_id")

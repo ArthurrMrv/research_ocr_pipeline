@@ -7,7 +7,7 @@ import os
 import time
 
 import streamlit as st
-from gotrue.errors import AuthApiError
+from supabase_auth.errors import AuthApiError
 from supabase import Client, create_client
 
 
