@@ -20,7 +20,7 @@ class AnthropicProvider(LLMProvider):
         api_key = os.environ["ANTHROPIC_API_KEY"]
         self._client = anthropic.Anthropic(api_key=api_key)
 
-    def call(self, prompt: str, ocr_text: str) -> dict:
+    def call(self, prompt: str, ocr_text: str, *, schema: dict | None = None) -> dict:
         filled = prompt.replace("{ocr_text}", ocr_text)
         response = self._call_with_retry(
             lambda: self._client.messages.create(

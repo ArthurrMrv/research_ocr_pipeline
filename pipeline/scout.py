@@ -67,7 +67,7 @@ def _validate_scout_scores(result: dict, schema: dict) -> None:
 def _score_page(provider, prompt_text: str, schema: dict, ocr_text: str) -> dict | None:
     """Call the scout model for one page, retrying once on schema/key mismatch."""
     for attempt in range(2):
-        result = provider.call(prompt_text, ocr_text)
+        result = provider.call(prompt_text, ocr_text, schema=schema)
         try:
             _validate_scout_scores(result, schema)
             return result

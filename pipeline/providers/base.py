@@ -30,10 +30,13 @@ class LLMProvider(ABC):
         self.max_tokens: int = step_config.get("max_tokens", 2048)
 
     @abstractmethod
-    def call(self, prompt: str, ocr_text: str) -> dict:
+    def call(self, prompt: str, ocr_text: str, *, schema: dict | None = None) -> dict:
         """
         Fill {ocr_text} placeholder in prompt, call the API,
         parse and return the response as a JSON dict.
+
+        Args:
+            schema: Optional JSON Schema dict for structured output enforcement.
 
         Raises:
             ValueError: if the API response cannot be parsed as JSON.
@@ -60,6 +63,9 @@ class LLMProvider(ABC):
         return NonJSONResponseError(provider_name, raw)
 
 
+_DATA_MARKER = "===DATA==="
+
+
 class OpenAICompatibleProvider(LLMProvider):
     """Shared base for providers that use the OpenAI SDK with a custom base_url."""
 
@@ -75,18 +81,45 @@ class OpenAICompatibleProvider(LLMProvider):
             kwargs["base_url"] = self._base_url
         self._client = OpenAI(**kwargs)
 
-    def call(self, prompt: str, ocr_text: str) -> dict:
+    def _build_messages(self, prompt: str, ocr_text: str) -> list[dict]:
+        """Build chat messages from prompt, splitting on ===DATA=== marker if present.
+
+        If the prompt contains ===DATA===, everything before becomes the system
+        message and everything after (with {ocr_text} filled) becomes the user
+        message. Otherwise, falls back to a single user message.
+        """
         filled = prompt.replace("{ocr_text}", ocr_text)
+        if _DATA_MARKER in filled:
+            system_part, user_part = filled.split(_DATA_MARKER, 1)
+            return [
+                {"role": "system", "content": system_part.strip()},
+                {"role": "user", "content": user_part.strip()},
+            ]
+        return [{"role": "user", "content": filled}]
+
+    def _get_response_format(self, schema: dict | None = None) -> dict:
+        """Return the response_format parameter for the API call."""
+        return {"type": "json_object"}
+
+    def call(self, prompt: str, ocr_text: str, *, schema: dict | None = None) -> dict:
+        messages = self._build_messages(prompt, ocr_text)
+        response_format = self._get_response_format(schema)
         response = self._call_with_retry(
             lambda: self._client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "user", "content": filled}],
-                response_format={"type": "json_object"},
+                messages=messages,
+                response_format=response_format,
                 temperature=self.temperature,
                 max_completion_tokens=self.max_tokens,
             )
         )
-        raw = response.choices[0].message.content
+        choice = response.choices[0]
+        # Handle structured-output refusals
+        if getattr(choice.message, "refusal", None):
+            raise self._non_json_error(
+                self._provider_label, f"Model refused: {choice.message.refusal}"
+            )
+        raw = choice.message.content
         try:
             result = json.loads(raw)
             debug_logger.print_llm_response(f"{self._provider_label} / {self.model}", raw, result)

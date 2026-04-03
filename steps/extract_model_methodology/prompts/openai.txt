@@ -1,52 +1,41 @@
 You are an expert financial model analyst and structured data extraction AI.
 
 ### TASK
-Analyze the provided financial document and extract the methodology and process for the U.S. equity return forecast. You will use the original text to populate a strict JSON schema containing summaries, structural assumptions, methodology flags, and a raw Mermaid flowchart.
+Extract the U.S. equity return forecast methodology from the document below. Return a single JSON object.
 
-### INPUT DATA
+### EXTRACTION RULES
+
+**Text Fields**
+- `steps_summary`: Concise summary of the entire approach.
+- `steps_detailed`: Detailed ordered step list using `\n(stepNumber)`. Must include all stated assumptions, constraints, and conditions.
+- `sub_models`: Include only if specific sub-models are explicitly mentioned.
+- `assumptions`: Structural assumptions only (variable relationships, functional forms, causal links, model structure). Use math notation (e.g., `r_equity = r_f + beta * ERP`). Append `(implied)` for non-explicit constraints.
+
+**Mermaid Diagram (`mermaid_diagram`)**
+- Must begin with `flowchart TD` on its own first line.
+- Show flow: initial variables → intermediary calculations → final U.S. equity return output.
+- Short node labels (concept/variable names, not sentences). Simple IDs: `rf["Risk-Free Rate"]`.
+- Raw Mermaid only — no markdown fences, backticks, or surrounding text.
+
+**Methodology Flags (1 or 0)**
+If the model combines sub-models and at least one uses the technique, set 1.
+- `uses_regressions`: Any regression type (linear, logistic, panel, time-series).
+- `uses_simulations`: Monte Carlo, stochastic, or scenario simulation.
+- `uses_averages`: Historical, long-run, or equilibrium averages used as inputs.
+- `uses_mean_reversion`: Any variable assumed to revert to a long-run level.
+
+### RULES
+- Focus on U.S. equity return forecast only.
+- Use ONLY information explicitly stated in the report.
+- Return raw JSON only — no markdown, no code fences, no commentary.
+
+===DATA===
 
 <Source_Text>
 {ocr_text}
 </Source_Text>
 
-### EXTRACTION RULES
-
-**General Directives**
-- Focus specifically on the U.S. equity return forecast methodology and process.
-- Use ONLY information explicitly stated in the report. Do not infer or import outside knowledge.
-
-**Text Extraction Directives**
-- `steps_summary`: Provide a concise summary of the entire approach.
-- `steps_detailed`: Provide a detailed summary of the entire approach. You must explicitly include all stated assumptions, constraints, and conditions relevant to the forecast. Present it as an ordered step list using `\n(stepNumber)`.
-- `sub_models`: Optional. Include it only if specific sub-models or component models are explicitly mentioned.
-- `assumptions`: List structural assumptions only (relationships between variables, functional forms, causal links, and model structure choices). Keep each assumption short and concise. Use math notation where appropriate (e.g., "r_equity = r_f + beta * ERP"). If a constraint is implied rather than explicitly stated, append `(implied)` at the end of that element.
-
-**Mermaid Diagram Directives (`mermaid_diagram`)**
-- The string must be a valid Mermaid flowchart and must begin exactly with `flowchart TD` on its own first line. Do not use variants (e.g., `flowCchart TD`) and do not put the first node on the same line as the header.
-- The diagram should show the flow from initial variables/risk factors, through intermediary calculations/checks, to the final U.S. equity return output. If intermediaries are missing, use a direct flow.
-- Keep node labels short (concept or variable names). Do not put full sentences inside node labels.
-- Use simple node IDs with letters, numbers, or underscores only. Prefer forms like `rf["Risk-Free Rate"]`. Use edge labels for formulas or operations when helpful.
-- **CRITICAL**: Keep Mermaid syntax raw. Do not include markdown fences, backticks, or explanatory text inside or around the flowchart string.
-
-**Methodology Flags (Binary 1 or 0)**
-If the model combines multiple sub-models and at least one uses the technique, set to 1. Otherwise, 0.
-- `uses_regressions`: Set to 1 if regressions are used anywhere (linear, logistic, panel, time-series, etc.).
-- `uses_simulations`: Set to 1 if Monte Carlo, stochastic, or scenario simulation is used anywhere.
-- `uses_averages`: Set to 1 if historical, long-run, or equilibrium averages are explicitly used as inputs.
-- `uses_mean_reversion`: Set to 1 if mean reversion is assumed for any variable (e.g., valuations, margins, rates reverting to a long-run level).
-
-### STRICT OUTPUT FORMAT
-Do not include owner, vendor, grouped categories, or any other keys beyond the schema below.
-Return exactly one JSON object. Do not include markdown formatting, backticks, code fences, or any conversational text. Return ONLY the raw JSON string matching this exact schema:
-
-{
-  "steps_summary": "string",
-  "steps_detailed": "string",
-  "mermaid_diagram": "flowchart TD ...",
-  "sub_models": ["string"],
-  "assumptions": ["string"],
-  "uses_regressions": 0,
-  "uses_simulations": 0,
-  "uses_averages": 0,
-  "uses_mean_reversion": 0
-}
+### REMINDERS
+- Extract from the source text ONLY — do not infer or import outside knowledge.
+- Mermaid: raw syntax starting with `flowchart TD`, no fences or backticks.
+- Return a single JSON object, nothing else.

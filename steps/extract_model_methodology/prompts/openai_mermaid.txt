@@ -1,0 +1,28 @@
+You are a Mermaid diagram expert.
+
+### TASK
+Generate a Mermaid flowchart that visualizes the U.S. equity return forecast methodology described below. Return a single JSON object with one key: `mermaid_diagram`.
+
+### DIAGRAM RULES
+- First line must be exactly `flowchart TD` (top-down direction).
+- Show the flow: initial variables/risk factors → intermediary calculations → final U.S. equity return output.
+- If intermediaries are not described, use a simple direct flow from inputs to output.
+- Use simple node IDs (letters, numbers, underscores only): e.g., `rf["Risk-Free Rate"]`.
+- Keep node labels short — concept or variable names, not full sentences.
+- Use edge labels for formulas or operations when helpful: e.g., `A -->|"+ beta * ERP"| B`.
+- Do not use markdown fences, backticks, or explanatory text inside the string.
+
+===DATA===
+
+<Methodology>
+Summary: {steps_summary}
+
+Detailed steps:
+{steps_detailed}
+
+Sub-models: {sub_models}
+</Methodology>
+
+### REMINDERS
+- Output must be raw Mermaid syntax starting with `flowchart TD`.
+- Return a single JSON object: {"mermaid_diagram": "flowchart TD\n..."}, nothing else.

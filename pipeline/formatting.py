@@ -23,9 +23,12 @@ _SCOUT_SHORTLIST_RE = re.compile(
     r"^Scout shortlisted no pages for step \[(?P<step>[^\]]+)\] at threshold .+$",
     re.DOTALL,
 )
+from pathlib import Path
+
 from pipeline.providers.registry import get_provider
 from pipeline.providers.base import NonJSONResponseError
 from pipeline.step_errors import MissingPromptError
+from pipeline.token_utils import check_context_budget
 from pipeline.tracker import (
     append_error,
     delete_formatting_results,
@@ -150,10 +153,11 @@ def run_step(
     provider_name = config["provider"]
     provider = get_provider(provider_name, config)
     model = config["model"]
+    check_context_budget(prompt_text, ocr_text, model, step_name=step_name)
 
     for attempt in range(2):
         debug_logger.print_step_start(step_name)
-        result = provider.call(prompt_text, ocr_text)
+        result = provider.call(prompt_text, ocr_text, schema=schema)
         try:
             validate_output(result, schema, step_name)
             return result, model
@@ -290,6 +294,41 @@ def _build_context(step_name: str, dep_results: dict[str, dict]) -> str:
     return _build_methodology_context(first_result)
 
 
+def _run_mermaid_subcall(
+    result: dict,
+    config: dict,
+) -> str | None:
+    """Generate a mermaid diagram in a separate focused LLM call.
+
+    Uses the methodology result (summary, detailed steps, sub-models) as input
+    and returns just the mermaid_diagram string, or None on failure.
+    """
+    provider_name = config["provider"]
+    step_dir = STEPS_DIR / "extract_model_methodology"
+    # Look for provider-specific mermaid prompt, fall back to default
+    mermaid_prompt_path = step_dir / "prompts" / f"{provider_name}_mermaid.txt"
+    if not mermaid_prompt_path.exists():
+        mermaid_prompt_path = step_dir / "prompts" / "default_mermaid.txt"
+    if not mermaid_prompt_path.exists():
+        return None
+    prompt_text = mermaid_prompt_path.read_text(encoding="utf-8")
+
+    # Fill in methodology context placeholders
+    prompt_text = prompt_text.replace("{steps_summary}", result.get("steps_summary", ""))
+    prompt_text = prompt_text.replace("{steps_detailed}", result.get("steps_detailed", ""))
+    sub_models = result.get("sub_models") or []
+    prompt_text = prompt_text.replace("{sub_models}", ", ".join(sub_models) if sub_models else "None")
+
+    provider = get_provider(provider_name, config)
+    try:
+        debug_logger.print_step_start("extract_model_methodology [mermaid]")
+        # Use empty ocr_text since all info is in the prompt
+        mermaid_result = provider.call(prompt_text, "")
+        return mermaid_result.get("mermaid_diagram")
+    except Exception:
+        return None
+
+
 def _load_verify_prompt(step_name: str, provider: str = "") -> str:
     """Load verify prompt from verify_prompts/ subfolder.
 
@@ -331,6 +370,7 @@ def _run_step_multipass(
     draft_model = config["draft_model"]
     draft_runs = config.get("draft_runs", 3)
     pro_model = config["model"]
+    check_context_budget(prompt_text, ocr_text, draft_model, step_name=f"{step_name} [draft]")
 
     # Step 1: N draft passes with cheap model
     flash_config = {**config, "model": draft_model}
@@ -339,7 +379,7 @@ def _run_step_multipass(
     for _ in range(draft_runs):
         try:
             debug_logger.print_step_start(f"{step_name} [draft]")
-            draft = flash_provider.call(prompt_text, ocr_text)
+            draft = flash_provider.call(prompt_text, ocr_text, schema=schema)
             drafts.append(draft)
         except Exception:
             continue
@@ -361,7 +401,7 @@ def _run_step_multipass(
 
     for attempt in range(2):
         debug_logger.print_step_start(f"{step_name} [verify]")
-        result = pro_provider.call(filled_verify, ocr_text)
+        result = pro_provider.call(filled_verify, ocr_text, schema=schema)
         try:
             validate_output(result, schema, step_name)
             return result, pro_model
@@ -663,6 +703,12 @@ def run_formatting(
             failed_details.append({"step": step_name, "reason": reason})
             failed_steps += 1
             continue
+
+        # Post-processing: generate mermaid diagram in a separate focused call
+        if step_name == "extract_model_methodology" and step_config.get("provider") == "openai":
+            mermaid_str = _run_mermaid_subcall(result, step_config)
+            if mermaid_str:
+                result["mermaid_diagram"] = mermaid_str
 
         step_results[step_name] = result
         formatting_upsert(

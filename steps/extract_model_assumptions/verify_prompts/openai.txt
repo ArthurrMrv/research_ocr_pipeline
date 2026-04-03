@@ -1,13 +1,28 @@
-You are an expert financial model auditor and AI data validation engine. 
+You are an expert financial model auditor.
 
 ### TASK
-Your objective is to verify, clean, and augment a draft classification of assumptions for a U.S. equity return forecast model. You will review a drafted JSON extraction against the original document text and methodology context to ensure total accuracy, removing unsupported items and adding missed items.
+Verify and finalize a draft classification of assumptions for a U.S. equity return forecast model. The draft was merged from multiple preliminary passes. Clean, verify against source text, and augment with any missed items.
 
-### INPUT DATA
+### VERIFICATION STEPS
 
-<Draft>
+1. **Grounding**: Keep only assumptions explicitly supported by the source text or context. Remove fabricated or unsupported items.
+2. **Classification**: Verify each label is strictly one of:
+   - `mean-reversion`: variable reverts to long-run average or equilibrium.
+   - `historical`: based on historical data, past averages, backward-looking relationships.
+   - `forward-looking`: based on current pricing, expectations, forecasts, forward indicators.
+3. **Building blocks**: Ensure each `building_block` names the actual variable or component.
+4. **Deduplication**: Remove duplicates/near-duplicates, keep the most specific wording. Do not collapse distinct conditions into generic statements.
+5. **Rescan**: After filtering, do one full rescan of the source text for supported assumptions the draft missed. Check methodology sections, footnotes, appendices, assumption tables, sub-model descriptions.
+6. **Global metrics**: Verify `forward_or_backward` and `index_of_forwardness` are consistent with the finalized assumption list. Write a concise `forward_backward_explanation` (1-3 sentences).
+
+### RULES
+- Use ONLY information from the provided inputs. Do not infer outside knowledge.
+- Return raw JSON only — no markdown, no code fences, no commentary.
+
+===DATA===
+
+### DRAFT
 {draft_result}
-</Draft>
 
 <Context>
 {methodology_context}
@@ -17,40 +32,7 @@ Your objective is to verify, clean, and augment a draft classification of assump
 {ocr_text}
 </Source_Text>
 
-### EXECUTION PIPELINE
-
-**Phase 1: Verify and Clean the Draft**
-Review each assumption currently in the `<Draft>` against the `<Source_Text>` and `<Context>`.
-- **Grounding**: Keep only assumptions explicitly grounded in the text. Remove fabricated or unsupported items.
-- **Classification Accuracy**: Ensure the label is strictly one of the following:
-  - "mean-reversion": variable reverts to a long-run average or equilibrium value.
-  - "historical": based on historical data, past averages, or backward-looking empirical relationships.
-  - "forward-looking": based on current market pricing, expectations, forecasts, or forward-looking indicators.
-- **Building Block Accuracy**: Ensure the `building_block` explicitly names the actual variable or component.
-- **Deduplication**: Remove duplicates or near-duplicates. Keep the most specific and faithful wording. Do not collapse distinct conditions into generic statements.
-
-**Phase 2: Rescan and Augment**
-After verifying the draft, perform one full rescan of the `<Source_Text>`.
-- Check methodology sections, footnotes, appendices, assumption tables, sub-model descriptions, and implied constraints.
-- Add any supported assumptions that the draft missed, applying the same classification rules. Use ONLY information from the provided inputs. Do not infer outside knowledge.
-
-**Phase 3: Global Metrics Validation**
-- Verify the overall `forward_or_backward` judgment aligns with the balance of the finalized assumption list.
-- Ensure the `index_of_forwardness` (where -1.0 = purely backward, 0.0 = balanced, 1.0 = purely forward) matches the explanation and the data.
-- Write a concise `forward_backward_explanation` (1-3 sentences) fully justified by the report's content.
-
-### STRICT OUTPUT FORMAT
-Return exactly one JSON object. Do not include markdown formatting, backticks, code fences, or any conversational text. Return ONLY the raw JSON string matching this exact schema:
-
-{
-  "assumptions": [
-    {
-      "assumption": "string",
-      "building_block": "string",
-      "classification": "mean-reversion | historical | forward-looking"
-    }
-  ],
-  "forward_or_backward": "forward-looking | backward-looking",
-  "forward_backward_explanation": "string",
-  "index_of_forwardness": 0.0
-}
+### REMINDERS
+- Keep distinct assumptions separate — do not merge different conditions.
+- Classification must be exactly one of: mean-reversion, historical, forward-looking.
+- Return a single JSON object, nothing else.

@@ -38,15 +38,17 @@ class TestMoonshotProvider:
 
     def test_call_returns_parsed_json(self):
         provider = self._make_provider()
-        provider._client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"model_name": "Alpha"}'
-        )
+        mock_msg = provider._client.chat.completions.create.return_value.choices[0].message
+        mock_msg.content = '{"model_name": "Alpha"}'
+        mock_msg.refusal = None
         result = provider.call("Extract: {ocr_text}", "some text")
         assert result == {"model_name": "Alpha"}
 
     def test_call_fills_ocr_text_placeholder(self):
         provider = self._make_provider()
-        provider._client.chat.completions.create.return_value.choices[0].message.content = "{}"
+        mock_msg = provider._client.chat.completions.create.return_value.choices[0].message
+        mock_msg.content = "{}"
+        mock_msg.refusal = None
         provider.call("Prompt: {ocr_text}", "my ocr content")
         call_args = provider._client.chat.completions.create.call_args
         messages = call_args[1]["messages"]
@@ -54,9 +56,9 @@ class TestMoonshotProvider:
 
     def test_call_raises_on_invalid_json(self):
         provider = self._make_provider()
-        provider._client.chat.completions.create.return_value.choices[0].message.content = (
-            "not json"
-        )
+        mock_msg = provider._client.chat.completions.create.return_value.choices[0].message
+        mock_msg.content = "not json"
+        mock_msg.refusal = None
         with pytest.raises(NonJSONResponseError, match="non-JSON"):
             provider.call("prompt", "ocr text")
 
@@ -86,9 +88,9 @@ class TestOpenAIProvider:
 
     def test_call_returns_parsed_json(self):
         provider = self._make_provider()
-        provider._client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"tables": []}'
-        )
+        mock_msg = provider._client.chat.completions.create.return_value.choices[0].message
+        mock_msg.content = '{"tables": []}'
+        mock_msg.refusal = None
         result = provider.call("Extract tables: {ocr_text}", "text")
         assert result == {"tables": []}  # noqa: E501
 
@@ -139,6 +141,7 @@ class TestAnthropicProvider:
 def _make_openai_response(content: str):
     msg = MagicMock()
     msg.content = content
+    msg.refusal = None
     choice = MagicMock()
     choice.message = msg
     response = MagicMock()
