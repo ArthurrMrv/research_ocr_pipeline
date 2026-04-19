@@ -170,9 +170,13 @@ with st.expander("📊 Formatting Results", expanded=True):
                     st.markdown(f"**Techniques used:** {', '.join(active_techniques)}")
 
             elif step == "extract_model_assumptions":
-                st.markdown(f"**Overall Orientation:** {content.get('forward_or_backward', 'N/A')}")
-                st.markdown(f"**Explanation:** {content.get('forward_backward_explanation', '')}")
-                st.markdown(f"**Forwardness Index:** {content.get('index_of_forwardness', 'N/A')}")
+                st.markdown(f"**Sophistication Index:** {content.get('sophistication_index', 'N/A')}")
+                st.markdown(f"**Explanation:** {content.get('sophistication_explanation', '')}")
+                techniques = content.get("techniques_used", [])
+                if techniques:
+                    st.markdown("**Techniques Used:**")
+                    for t in techniques:
+                        st.markdown(f"- {t.get('technique_name', '')} (complexity: {t.get('complexity', '?')})")
 
                 assumptions = content.get("assumptions", [])
                 if assumptions:
