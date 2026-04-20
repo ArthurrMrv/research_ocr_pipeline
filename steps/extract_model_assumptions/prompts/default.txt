@@ -4,7 +4,7 @@ You are given context from two prior extraction steps:
 1. Structural assumptions (relationships, functional forms, causal links)
 2. Value-type assumptions (specific numbers, macro conditions, baseline values)
 
-Use both the prior context AND the original document to produce a comprehensive, deduplicated list of classified assumptions.
+Use both the prior context AND the original document to produce a comprehensive, deduplicated list of classified assumptions. Also identify all analytical techniques used and rate the model's overall methodological sophistication.
 
 Return exactly one JSON object with this shape:
 {
@@ -15,9 +15,14 @@ Return exactly one JSON object with this shape:
       "classification": "mean-reversion | historical | forward-looking"
     }
   ],
-  "forward_or_backward": "forward-looking | backward-looking",
-  "forward_backward_explanation": "string",
-  "index_of_forwardness": 0.0
+  "techniques_used": [
+    {
+      "technique_name": "string",
+      "complexity": 5
+    }
+  ],
+  "sophistication_index": 5.0,
+  "sophistication_explanation": "string"
 }
 
 Rules:
@@ -27,9 +32,14 @@ Rules:
   - "forward-looking": the assumption is based on current market pricing, expectations, forecasts, or forward-looking indicators (e.g., because of AI we forecast GDP growth to rise at 5%).
 - `building_block` should name the specific variable, sub-model, or component this assumption relates to (e.g., "earnings growth", "valuation", "dividend yield", "inflation", "risk premium", "interest rates").
 - Deduplicate assumptions that appear in both structural and value-type contexts — keep the more specific version.
-- `forward_or_backward` is your overall judgment of the model's orientation: "forward-looking" if the model primarily relies on expectations, current pricing, or forecasts; "backward-looking" if the model primarily relies on historical data and past averages.
-- `forward_backward_explanation` must be 1-3 sentences explaining the overall judgment.
-- `index_of_forwardness` is a continuous score: -1 = purely backward-looking, 0 = balanced mix, 1 = purely forward-looking.
+- `techniques_used`: list every distinct analytical technique or methodology the model uses. Rate each on a 1-10 complexity scale:
+  - 1-2: Simple historical averages, fixed assumptions, naive extrapolation
+  - 3-4: Trend extrapolation, basic regression, moving averages, rule-of-thumb adjustments
+  - 5-6: Multi-factor regression, mean-reversion models, Gordon growth model, dividend discount models, building-block approaches
+  - 7-8: Monte Carlo simulation, VAR/cointegration, Bayesian estimation, regime-switching models, factor-based risk premia decomposition
+  - 9-10: DSGE, machine learning / AI-driven forecasts, Kalman filtering, option-pricing-based approaches, proprietary simulation engines
+- `sophistication_index` is an overall score (1-10) reflecting the model's holistic methodological sophistication, weighted by how central each technique is to the core forecast.
+- `sophistication_explanation` must be 1-3 sentences justifying the score based on the techniques identified.
 - Use ONLY information from the report and the provided context. Do not infer or import outside knowledge.
 - Return JSON only. No markdown, no explanation, no code fences.
 

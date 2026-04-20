@@ -144,9 +144,12 @@ class TestExtractModelAssumptionsContract:
                     "classification": "forward-looking",
                 },
             ],
-            "forward_or_backward": "backward-looking",
-            "forward_backward_explanation": "The model relies mostly on historical averages and mean-reversion assumptions.",
-            "index_of_forwardness": -0.4,
+            "techniques_used": [
+                {"technique_name": "building-block approach", "complexity": 5},
+                {"technique_name": "mean-reversion model", "complexity": 6},
+            ],
+            "sophistication_index": 5.5,
+            "sophistication_explanation": "The model relies on a building-block approach with mean-reversion assumptions, representing intermediate sophistication.",
         }
 
         validate_output(payload, schema, "extract_model_assumptions")
@@ -172,9 +175,9 @@ class TestExtractModelAssumptionsContract:
                     "classification": "speculative",
                 }
             ],
-            "forward_or_backward": "forward-looking",
-            "forward_backward_explanation": "test",
-            "index_of_forwardness": 0.5,
+            "techniques_used": [],
+            "sophistication_index": 5,
+            "sophistication_explanation": "test",
         }
 
         with pytest.raises(jsonschema.ValidationError):
@@ -185,9 +188,9 @@ class TestExtractModelAssumptionsContract:
 
         payload = {
             "assumptions": [],
-            "forward_or_backward": "forward-looking",
-            "forward_backward_explanation": "test",
-            "index_of_forwardness": 1.5,
+            "techniques_used": [],
+            "sophistication_index": 11,
+            "sophistication_explanation": "test",
         }
 
         with pytest.raises(jsonschema.ValidationError):
@@ -205,9 +208,9 @@ class TestExtractModelAssumptionsContract:
                     "extra_field": "not allowed",
                 }
             ],
-            "forward_or_backward": "backward-looking",
-            "forward_backward_explanation": "test",
-            "index_of_forwardness": -0.2,
+            "techniques_used": [],
+            "sophistication_index": 3,
+            "sophistication_explanation": "test",
         }
 
         with pytest.raises(jsonschema.ValidationError):

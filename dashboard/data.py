@@ -31,9 +31,9 @@ MODEL_EXPORT_COLUMNS = [
     "uses_averages",
     "uses_mean_reversion",
     "assumptions_classified",
-    "forward_or_backward",
-    "forward_backward_explanation",
-    "index_of_forwardness",
+    "techniques_used",
+    "sophistication_index",
+    "sophistication_explanation",
 ]
 
 
@@ -230,9 +230,12 @@ def _build_model_export_df(
                 "uses_averages": meth.get("uses_averages", 0),
                 "uses_mean_reversion": meth.get("uses_mean_reversion", 0),
                 "assumptions_classified": _serialize_assumptions(assum.get("assumptions")),
-                "forward_or_backward": assum.get("forward_or_backward", ""),
-                "forward_backward_explanation": assum.get("forward_backward_explanation", ""),
-                "index_of_forwardness": assum.get("index_of_forwardness", ""),
+                "techniques_used": ", ".join(
+                    f"{t.get('technique_name', '')} ({t.get('complexity', '')})"
+                    for t in assum.get("techniques_used", [])
+                ) if assum.get("techniques_used") else "",
+                "sophistication_index": assum.get("sophistication_index", ""),
+                "sophistication_explanation": assum.get("sophistication_explanation", ""),
             }
         )
 

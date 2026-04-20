@@ -39,9 +39,11 @@ class TestModelExport:
                     "assumptions": [
                         {"assumption": "CAPE reverts to mean", "building_block": "valuation", "classification": "mean-reversion"},
                     ],
-                    "forward_or_backward": "backward-looking",
-                    "forward_backward_explanation": "Relies on historical averages.",
-                    "index_of_forwardness": -0.4,
+                    "techniques_used": [
+                        {"technique_name": "mean-reversion model", "complexity": 5},
+                    ],
+                    "sophistication_index": 4.5,
+                    "sophistication_explanation": "Relies on mean-reversion with building-block approach.",
                 },
             }
         ]
@@ -62,8 +64,8 @@ class TestModelExport:
         assert record["uses_averages"] == 1
         assert record["uses_mean_reversion"] == 1
         assert "[mean-reversion] CAPE reverts to mean" in record["assumptions_classified"]
-        assert record["forward_or_backward"] == "backward-looking"
-        assert record["index_of_forwardness"] == -0.4
+        assert record["techniques_used"] == "mean-reversion model (5)"
+        assert record["sophistication_index"] == 4.5
 
     def test_build_model_export_df_handles_missing_steps(self):
         inputs_rows = [
@@ -93,9 +95,9 @@ class TestModelExport:
         assert result.loc[0, "uses_averages"] == 0
         assert result.loc[0, "uses_mean_reversion"] == 0
         assert result.loc[0, "assumptions_classified"] == ""
-        assert result.loc[0, "forward_or_backward"] == ""
-        assert result.loc[0, "forward_backward_explanation"] == ""
-        assert result.loc[0, "index_of_forwardness"] == ""
+        assert result.loc[0, "techniques_used"] == ""
+        assert result.loc[0, "sophistication_index"] == ""
+        assert result.loc[0, "sophistication_explanation"] == ""
 
     def test_fetch_model_export_queries_all_steps(self, monkeypatch):
         calls = []

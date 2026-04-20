@@ -1131,36 +1131,47 @@ class TestMergeAssumptionDrafts:
                     {"assumption": "CAPE reverts to mean", "building_block": "valuation", "classification": "mean-reversion"},
                     {"assumption": "GDP = 3%", "building_block": "growth", "classification": "historical"},
                 ],
-                "forward_or_backward": "backward-looking",
-                "forward_backward_explanation": "Relies on history.",
-                "index_of_forwardness": -0.5,
+                "techniques_used": [
+                    {"technique_name": "mean-reversion model", "complexity": 5},
+                    {"technique_name": "historical averaging", "complexity": 2},
+                ],
+                "sophistication_index": 4.0,
+                "sophistication_explanation": "Relies on history.",
             },
             {
                 "assumptions": [
                     {"assumption": "cape reverts to mean", "building_block": "valuation", "classification": "mean-reversion"},
                     {"assumption": "AI boosts growth", "building_block": "growth", "classification": "forward-looking"},
                 ],
-                "forward_or_backward": "backward-looking",
-                "forward_backward_explanation": "Relies on history.",
-                "index_of_forwardness": -0.3,
+                "techniques_used": [
+                    {"technique_name": "Mean-Reversion Model", "complexity": 5},
+                    {"technique_name": "Gordon growth model", "complexity": 6},
+                ],
+                "sophistication_index": 6.0,
+                "sophistication_explanation": "Uses structured models.",
             },
         ]
         merged = _merge_assumption_drafts(drafts)
         assert len(merged["assumptions"]) == 3
-        assert merged["forward_or_backward"] == "backward-looking"
-        assert merged["index_of_forwardness"] == -0.4
+        technique_names = [t["technique_name"] for t in merged["techniques_used"]]
+        assert len(merged["techniques_used"]) == 3
+        assert "mean-reversion model" in [n.lower() for n in technique_names]
+        assert "historical averaging" in [n.lower() for n in technique_names]
+        assert "gordon growth model" in [n.lower() for n in technique_names]
+        assert merged["sophistication_index"] == 5.0
 
     def test_averages_index(self):
         drafts = [
-            {"assumptions": [], "forward_or_backward": "forward-looking", "forward_backward_explanation": "a", "index_of_forwardness": 0.8},
-            {"assumptions": [], "forward_or_backward": "forward-looking", "forward_backward_explanation": "a", "index_of_forwardness": 0.4},
-            {"assumptions": [], "forward_or_backward": "backward-looking", "forward_backward_explanation": "b", "index_of_forwardness": 0.2},
+            {"assumptions": [], "techniques_used": [], "sophistication_index": 8.0, "sophistication_explanation": "a"},
+            {"assumptions": [], "techniques_used": [], "sophistication_index": 4.0, "sophistication_explanation": "a"},
+            {"assumptions": [], "techniques_used": [], "sophistication_index": 3.0, "sophistication_explanation": "b"},
         ]
         merged = _merge_assumption_drafts(drafts)
-        assert merged["index_of_forwardness"] == round((0.8 + 0.4 + 0.2) / 3, 2)
+        assert merged["sophistication_index"] == 5.0
 
     def test_handles_empty_drafts(self):
-        drafts = [{"assumptions": [], "forward_or_backward": "", "forward_backward_explanation": "", "index_of_forwardness": 0}]
+        drafts = [{"assumptions": [], "techniques_used": [], "sophistication_index": 1, "sophistication_explanation": ""}]
         merged = _merge_assumption_drafts(drafts)
         assert merged["assumptions"] == []
-        assert merged["index_of_forwardness"] == 0
+        assert merged["techniques_used"] == []
+        assert merged["sophistication_index"] == 1

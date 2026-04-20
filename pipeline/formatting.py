@@ -210,18 +210,25 @@ def _merge_assumption_drafts(drafts: list[dict]) -> dict:
                 seen.add(key)
                 all_assumptions.append(a)
 
-    idx_values = [d.get("index_of_forwardness", 0) for d in drafts]
-    avg_index = round(sum(idx_values) / len(drafts), 2) if drafts else 0
+    all_techniques: list[dict] = []
+    seen_techniques: set[str] = set()
+    for d in drafts:
+        for t in d.get("techniques_used", []):
+            name = t.get("technique_name", "").strip().lower()
+            if name and name not in seen_techniques:
+                seen_techniques.add(name)
+                all_techniques.append(t)
+
+    soph_values = [d.get("sophistication_index", 1) for d in drafts]
+    avg_soph = round(sum(soph_values) / len(drafts), 1) if drafts else 1
 
     return {
         "assumptions": all_assumptions,
-        "forward_or_backward": _most_common(
-            [d.get("forward_or_backward", "") for d in drafts]
+        "techniques_used": all_techniques,
+        "sophistication_index": avg_soph,
+        "sophistication_explanation": _most_common(
+            [d.get("sophistication_explanation", "") for d in drafts]
         ),
-        "forward_backward_explanation": _most_common(
-            [d.get("forward_backward_explanation", "") for d in drafts]
-        ),
-        "index_of_forwardness": avg_index,
     }
 
 
