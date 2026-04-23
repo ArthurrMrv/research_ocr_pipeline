@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import jsonschema
 from supabase import Client
 
-from config import ACTIVE_STEPS, SCOUT_SCORE_THRESHOLD, STEPS_DIR
+from config import ACTIVE_STEPS, SCOUT_FALLBACK_TOP_N, SCOUT_SCORE_THRESHOLD, STEPS_DIR
 from pipeline import debug_logger
 
 _FORMATTING_ERROR_RE = re.compile(
@@ -245,9 +245,6 @@ def _build_methodology_context(result: dict | None) -> str:
     summary = result.get("steps_summary", "")
     if summary:
         parts.append(f"Summary: {summary}")
-    detailed = result.get("steps_detailed", "")
-    if detailed:
-        parts.append(f"Detailed steps:\n{detailed}")
     sub_models = result.get("sub_models", [])
     if sub_models:
         parts.append(f"Sub-models used: {', '.join(sub_models)}")
@@ -558,6 +555,13 @@ def run_formatting(
     for row in scout_scores:
         scout_scores_by_step.setdefault(row["step_name"], []).append(row)
 
+    all_above_threshold_pages: set[int] = set()
+    if scout_has_run:
+        for scores_list in scout_scores_by_step.values():
+            for row in scores_list:
+                if row["score"] >= SCOUT_SCORE_THRESHOLD:
+                    all_above_threshold_pages.add(row["page_number"])
+
     completed_steps = 0
     failed_steps = 0
     failed_details: list[dict] = []
@@ -576,17 +580,27 @@ def run_formatting(
             ]
             shortlisted_pages.sort(key=lambda item: item[0])
             if not shortlisted_pages:
-                reason = "no scout pages above threshold"
-                _append_formatting_error(
-                    supa_client,
-                    doc_id,
-                    attempt=attempts,
-                    step_name=step_name,
-                    reason=reason,
-                )
-                failed_details.append({"step": step_name, "reason": reason})
-                failed_steps += 1
-                continue
+                step_scores_list = scout_scores_by_step.get(step_name, [])
+                sorted_by_score = sorted(step_scores_list, key=lambda r: r["score"], reverse=True)
+                top_n_pages = {row["page_number"] for row in sorted_by_score[:SCOUT_FALLBACK_TOP_N]}
+                fallback_page_nums = top_n_pages | all_above_threshold_pages
+                shortlisted_pages = [
+                    (pn, ocr_by_page.get(pn))
+                    for pn in sorted(fallback_page_nums)
+                    if ocr_by_page.get(pn) is not None
+                ]
+                if not shortlisted_pages:
+                    reason = "no scout scores available"
+                    _append_formatting_error(
+                        supa_client,
+                        doc_id,
+                        attempt=attempts,
+                        step_name=step_name,
+                        reason=reason,
+                    )
+                    failed_details.append({"step": step_name, "reason": reason})
+                    failed_steps += 1
+                    continue
             step_ocr_text = "\n\n".join(content for _, content in shortlisted_pages)
             pages_given = [page_number for page_number, _ in shortlisted_pages]
         else:

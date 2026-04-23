@@ -509,8 +509,8 @@ class TestRunFormatting:
         for call in mock_upsert.call_args_list:
             assert call[0][1]["pages_given"] == [2, 5]
 
-    def test_skips_step_when_scout_has_no_range(self, tmp_path):
-        """When scout ran but shortlisted no pages, append error and skip that step."""
+    def test_fallback_when_scout_below_threshold(self, tmp_path):
+        """When scout scores are below threshold, fallback to top-N + cross-step pages."""
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0, "last_scout": "2024-01-01T00:00:00+00:00"}
         ocr_chunks = [{"page_number": 1, "content": "--- Page 1 ---\nsome text"}]
         bronze_row = {"doc_id": "doc1", "institution": None}
@@ -529,17 +529,14 @@ class TestRunFormatting:
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
             patch("pipeline.formatting.SCOUT_SCORE_THRESHOLD", 0.5),
-            patch("pipeline.formatting.append_error") as mock_err,
             patch("pipeline.formatting.formatting_upsert") as mock_upsert,
         ):
-            run_formatting("doc1", client)
+            result = run_formatting("doc1", client)
 
-        # Only extract_model_name should run; extract_table is skipped
-        assert mock_step.call_count == 1
-        mock_err.assert_called_once()
-        assert "extract_table" in mock_err.call_args[0][2]
-        assert mock_upsert.call_count == 1
-        assert mock_upsert.call_args[0][1]["step_name"] == "extract_model_name"
+        # Both steps should run: extract_model_name above threshold, extract_table via fallback
+        assert mock_step.call_count == 2
+        assert mock_upsert.call_count == 2
+        assert result["failed_steps"] == 0
 
     def test_failed_details_contains_provider_error(self, tmp_path):
         """Provider exceptions produce failed_details with 'provider error: ...' reason."""
@@ -603,8 +600,8 @@ class TestRunFormatting:
         assert result["failed_steps"] == 2
         assert all("no prompt for institution" in d["reason"] for d in result["failed_details"])
 
-    def test_failed_details_scout_no_pages_above_threshold(self, tmp_path):
-        """Low scout scores produce failed_details with 'no scout pages above threshold' reason."""
+    def test_scout_fallback_uses_top_n_and_cross_step_pages(self, tmp_path):
+        """Low scout scores trigger fallback: top-N pages + pages above threshold in other steps."""
         pipeline_row = {"doc_id": "doc1", "last_formatting": None, "formatting_nb": 0, "last_scout": "2024-01-01T00:00:00+00:00"}
         ocr_chunks = [{"page_number": 1, "content": "text"}]
         bronze_row = {"doc_id": "doc1", "institution": None}
@@ -618,17 +615,18 @@ class TestRunFormatting:
 
         with (
             patch("pipeline.formatting.STEPS_DIR", tmp_path),
-            patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")),
+            patch("pipeline.formatting.run_step", return_value=(step_result, "kimi-k2.5")) as mock_step,
             patch("pipeline.formatting.load_step_config", return_value={}),
             patch("pipeline.formatting.load_step", return_value=("prompt", {}, {"provider": "moonshot", "model": "kimi-k2.5"})),
             patch("pipeline.formatting.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
             patch("pipeline.formatting.SCOUT_SCORE_THRESHOLD", 0.5),
-            patch("pipeline.formatting.append_error"),
         ):
             result = run_formatting("doc1", client)
 
-        assert result["failed_steps"] == 1
-        assert result["failed_details"] == [{"step": "extract_table", "reason": "no scout pages above threshold"}]
+        # extract_table runs via fallback (top-N page 1 + cross-step page 1 from extract_model_name)
+        assert mock_step.call_count == 2
+        assert result["failed_steps"] == 0
+        assert result["failed_details"] == []
 
     def test_reruns_when_attempts_exhausted_but_formatting_rows_missing(self, tmp_path):
         pipeline_row = {
