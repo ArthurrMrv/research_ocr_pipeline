@@ -114,7 +114,6 @@ def run_scout(
     delete_scout_page_scores(client, doc_id)
 
     try:
-        pending_rows: list[dict] = []
         for chunk in scannable_pages:
             result = _score_page(provider, rendered_prompt, schema, chunk["content"])
             if result is None:
@@ -122,16 +121,17 @@ def run_scout(
                 return "error"
 
             page_number = chunk["page_number"]
-            for step_name, score in result.items():
-                pending_rows.append({
+            page_rows = [
+                {
                     "doc_id": doc_id,
                     "step_name": step_name,
                     "page_number": page_number,
                     "score": score,
                     "scout_model": config["model"],
-                })
-
-        scout_page_scores_bulk_upsert(client, pending_rows)
+                }
+                for step_name, score in result.items()
+            ]
+            scout_page_scores_bulk_upsert(client, page_rows)
     except Exception as exc:
         append_error(client, doc_id, f"Scout error: {exc}")
         raise

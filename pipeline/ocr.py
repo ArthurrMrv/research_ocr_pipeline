@@ -193,7 +193,11 @@ def run_ocr(
         raise ValueError(f"No pipeline row for doc_id={doc_id}")
 
     already_done = pipeline_row.get("last_ocr") is not None
-    if already_done and not force and not _after_date(pipeline_row, since):
+    bronze_date_row = (
+        client.table("bronze_mapping").select("added").eq("doc_id", doc_id).execute()
+    )
+    bronze_added = bronze_date_row.data[0] if bronze_date_row.data else {}
+    if already_done and not force and not _after_date(bronze_added, since):
         existing_rows = get_ocr_chunks(client, doc_id)
         empty_page_nums = [
             r["page_number"] for r in existing_rows if is_empty_page_content(r["content"])

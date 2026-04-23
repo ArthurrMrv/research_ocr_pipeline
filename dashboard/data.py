@@ -76,17 +76,15 @@ def fetch_overview() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def fetch_ocr_summary(doc_id: str) -> pd.DataFrame:
     """Page numbers + content lengths for a doc (no full text)."""
-    rows = _query("ocr_results", select="doc_id,page_number,ocr_model,added", doc_id=doc_id)
+    rows = _query("ocr_results", select="doc_id,page_number,ocr_model", doc_id=doc_id)
     if not rows:
-        return pd.DataFrame(columns=["page_number", "ocr_model", "added"])
-    # We need content length but don't want to cache full text in summary
+        return pd.DataFrame(columns=["page_number", "ocr_model"])
     full = _query("ocr_results", doc_id=doc_id)
     records = [
         {
             "page_number": r["page_number"],
             "ocr_model": r.get("ocr_model", ""),
             "content_length": len(r.get("content") or ""),
-            "added": r.get("added"),
         }
         for r in full
     ]

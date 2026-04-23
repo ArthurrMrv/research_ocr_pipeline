@@ -8,3 +8,4 @@ MAX_PAGES_PER_BATCH = 75
 ZAI_MAX_PAGES = 75  # safe batch size for ZAI layout_parsing API (hard limit is 100)
 OCR_PROVIDER = os.environ.get("OCR_PROVIDER", "zai")
 SCOUT_SCORE_THRESHOLD = float(os.environ.get("SCOUT_SCORE_THRESHOLD", "0.6"))
+SCOUT_FALLBACK_TOP_N = int(os.environ.get("SCOUT_FALLBACK_TOP_N", "5"))
