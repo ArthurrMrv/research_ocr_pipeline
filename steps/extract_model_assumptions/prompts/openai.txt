@@ -53,6 +53,7 @@ Return exactly one JSON object. Do not include markdown formatting, backticks, c
       "complexity": 5
     }
   ],
-  "sophistication_index": 5.0,
-  "sophistication_explanation": "string"
+  "sophistication_explanation": "string",
+  "sophistication_index": 5
+  
 }

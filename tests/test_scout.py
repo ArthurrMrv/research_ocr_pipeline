@@ -44,7 +44,10 @@ class TestRunScout:
         ]
         client = _make_client(pipeline_row, ocr_chunks, scout_scores)
 
-        with patch("pipeline.scout._score_page") as mock_score:
+        with (
+            patch("pipeline.scout._score_page") as mock_score,
+            patch("pipeline.scout.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
+        ):
             result = run_scout("doc1", client, force=False)
             assert result == "skipped"
             mock_score.assert_not_called()
@@ -116,6 +119,7 @@ class TestRunScout:
             patch("pipeline.scout.scout_page_scores_bulk_upsert"),
             patch("pipeline.scout.delete_scout_page_scores"),
             patch("pipeline.scout.pipeline_update"),
+            patch("pipeline.scout.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             run_scout("doc1", client)
 
@@ -139,6 +143,7 @@ class TestRunScout:
             patch("pipeline.scout.get_provider"),
             patch("pipeline.scout.delete_scout_page_scores"),
             patch("pipeline.scout.append_error") as mock_err,
+            patch("pipeline.scout.ACTIVE_STEPS", ["extract_model_name", "extract_table"]),
         ):
             run_scout("doc1", client)
 

@@ -54,15 +54,15 @@
         "additionalProperties": false
       }
     },
+    "sophistication_explanation": {
+      "type": "string",
+      "description": "Brief explanation (2-3 sentences) reflecting on optimal sophistication score and reasons for the choice."
+    },
     "sophistication_index": {
-      "type": "number",
+      "type": "integer",
       "minimum": 1,
       "maximum": 10,
       "description": "Overall methodological sophistication score from 1 (simple historical averages) to 10 (highly sophisticated quantitative methods)."
-    },
-    "sophistication_explanation": {
-      "type": "string",
-      "description": "Brief explanation (1-3 sentences) justifying the sophistication score based on the techniques used."
     }
   },
   "additionalProperties": false

@@ -284,7 +284,8 @@ class TestRunFormatting:
 
         assert result["status"] == "done"
         assert mock_step.call_count == 2
-        mock_delete.assert_called_once_with(client, "doc1")
+        # Previous results are NOT bulk-deleted upfront; upsert overwrites per step on success.
+        mock_delete.assert_not_called()
 
     def test_reruns_when_legacy_formatting_rows_are_invalid(self, tmp_path):
         pipeline_row = {

@@ -84,15 +84,20 @@ def extract_sub_pdf_bytes(pdf_path: str, start: int, end: int) -> bytes:
 
 
 def _after_date(row: dict, since: str | None) -> bool:
-    """Return True if row['added'] >= since (ISO date string). Returns False when since is None."""
+    """Return True if last_ocr >= since (ISO date string). Returns False when since is None.
+
+    Uses last_ocr as the reference timestamp because that is the only date field
+    available on the pipeline row. A row with no last_ocr has never been processed,
+    so it is always eligible when --parse-date is in use.
+    """
     if since is None:
         return False
-    added = row.get("added")
-    if added is None:
-        return False
-    added_dt = datetime.fromisoformat(str(added).replace("Z", "+00:00"))
+    last_ocr = row.get("last_ocr")
+    if last_ocr is None:
+        return True  # Never been OCR'd — always eligible
+    ocr_dt = datetime.fromisoformat(str(last_ocr).replace("Z", "+00:00"))
     since_dt = datetime.fromisoformat(since).replace(tzinfo=timezone.utc)
-    return added_dt >= since_dt
+    return ocr_dt >= since_dt
 
 
 def _reocr_pages(
@@ -219,8 +224,8 @@ def run_ocr(
 
     try:
         provider = get_ocr_provider(OCR_PROVIDER)
-        delete_ocr_rows(client, doc_id)
-
+        # Do NOT delete existing rows upfront — bulk_upsert overwrites by (doc_id, page_number).
+        # This preserves previous results if OCR fails partway through.
         empty_pages: list[int] = []
 
         try:

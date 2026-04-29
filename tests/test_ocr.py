@@ -10,24 +10,25 @@ from pipeline.ocr_providers.zai_provider import _split_by_pages
 
 class TestAfterDate:
     def test_returns_false_when_since_is_none(self):
-        row = {"added": "2024-01-01T00:00:00+00:00"}
+        row = {"last_ocr": "2024-01-01T00:00:00+00:00"}
         assert _after_date(row, None) is False
 
-    def test_returns_true_when_added_after_since(self):
-        row = {"added": "2024-06-01T00:00:00+00:00"}
+    def test_returns_true_when_ocr_after_since(self):
+        row = {"last_ocr": "2024-06-01T00:00:00+00:00"}
         assert _after_date(row, "2024-01-01") is True
 
-    def test_returns_false_when_added_before_since(self):
-        row = {"added": "2023-01-01T00:00:00+00:00"}
+    def test_returns_false_when_ocr_before_since(self):
+        row = {"last_ocr": "2023-01-01T00:00:00+00:00"}
         assert _after_date(row, "2024-01-01") is False
 
-    def test_returns_true_when_added_equals_since(self):
-        row = {"added": "2024-01-01T00:00:00+00:00"}
+    def test_returns_true_when_ocr_equals_since(self):
+        row = {"last_ocr": "2024-01-01T00:00:00+00:00"}
         assert _after_date(row, "2024-01-01") is True
 
-    def test_returns_false_when_added_is_none(self):
-        row = {"added": None}
-        assert _after_date(row, "2024-01-01") is False
+    def test_returns_true_when_last_ocr_is_none(self):
+        # No last_ocr means never processed — always eligible when --parse-date is used
+        row = {"last_ocr": None}
+        assert _after_date(row, "2024-01-01") is True
 
 
 class TestSplitByPages:
@@ -149,15 +150,14 @@ class TestRunOcr:
         mock_provider.ocr_document.side_effect = NotImplementedError
         mock_provider.ocr_pages.return_value = "page text"
 
-        with patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider):
+        with (
+            patch("pipeline.ocr.get_ocr_provider", return_value=mock_provider),
+            patch("pipeline.ocr.silver_bulk_upsert") as mock_upsert,
+        ):
             run_ocr("doc1", client)
 
         mock_provider.ocr_pages.assert_called_once()
-        # Should have called upsert on ocr_results
-        upsert_calls = [
-            c for c in client.table.call_args_list if c[0][0] == "ocr_results"
-        ]
-        assert len(upsert_calls) >= 1
+        mock_upsert.assert_called_once()
 
     def test_force_reruns_ocr(self, fixture_pdf):
         pipeline_row = self._make_pipeline_row(last_ocr="2024-01-01T00:00:00+00:00")
@@ -308,7 +308,8 @@ class TestRunOcr:
         mock_err.assert_called_once()
         assert "2 empty page(s)" in mock_err.call_args[0][2]
 
-    def test_deletes_existing_rows_before_reocr(self, fixture_pdf):
+    def test_does_not_delete_existing_rows_before_reocr(self, fixture_pdf):
+        """OCR upserts in place; previous results are preserved if the run fails partway."""
         pipeline_row = self._make_pipeline_row(last_ocr=None)
         bronze_row = self._make_bronze_row(file_path=fixture_pdf)
         client = self._make_client(pipeline_row, bronze_row)
@@ -323,4 +324,4 @@ class TestRunOcr:
         ):
             run_ocr("doc1", client)
 
-        mock_delete.assert_called_once_with(client, "doc1")
+        mock_delete.assert_not_called()

@@ -111,8 +111,8 @@ def run_scout(
     rendered_prompt = _render_scout_prompt(prompt_text, step_definitions)
     provider = get_provider(config["provider"], config)
 
-    delete_scout_page_scores(client, doc_id)
-
+    # Do NOT delete existing scores upfront — bulk_upsert overwrites by (doc_id, step_name, page_number).
+    # This preserves previous scores if the run fails partway through.
     try:
         for chunk in scannable_pages:
             result = _score_page(provider, rendered_prompt, schema, chunk["content"])

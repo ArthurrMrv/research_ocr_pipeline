@@ -21,7 +21,7 @@ Return exactly one JSON object with this shape:
       "complexity": 5
     }
   ],
-  "sophistication_index": 5.0,
+  "sophistication_index": 5,
   "sophistication_explanation": "string"
 }
 
@@ -39,7 +39,7 @@ Rules:
   - 7-8: Monte Carlo simulation, VAR/cointegration, Bayesian estimation, regime-switching models, factor-based risk premia decomposition
   - 9-10: DSGE, machine learning / AI-driven forecasts, Kalman filtering, option-pricing-based approaches, proprietary simulation engines
 - `sophistication_index` is an overall score (1-10) reflecting the model's holistic methodological sophistication, weighted by how central each technique is to the core forecast.
-- `sophistication_explanation` must be 1-3 sentences justifying the score based on the techniques identified.
+- `sophistication_explanation` must be 2-3 sentences justifying the score based on the techniques identified.
 - Use ONLY information from the report and the provided context. Do not infer or import outside knowledge.
 - Return JSON only. No markdown, no explanation, no code fences.
 

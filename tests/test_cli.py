@@ -31,6 +31,8 @@ class TestCli:
             patch("main.get_supabase_client") as mock_supa,
             patch("main.ingest", return_value=["doc1"]),
             patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.get_bronze_row_by_name", return_value={"doc_id": "doc1"}),
+            patch("main.get_all_bronze_rows", return_value=[{"doc_id": "doc1", "doc_name": "test"}]),
             patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
             patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
@@ -51,6 +53,7 @@ class TestCli:
             patch("main.ingest", return_value=[]),
             patch("main.get_all_doc_ids", return_value=["target-doc", "stale-doc"]),
             patch("main.make_doc_id", return_value="target-doc"),
+            patch("main.get_bronze_row_by_name", return_value=None),
             patch("main._build_doc_labels", return_value={"target-doc": "JPMorgan_20170930.pdf", "stale-doc": "stale.pdf"}),
             patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
@@ -63,11 +66,14 @@ class TestCli:
             mock_fmt.assert_called_once_with("target-doc", mock_supa.return_value, force=False)
 
     def test_parse_all_flag_passes_force(self, tmp_path):
+        (tmp_path / "doc1.pdf").touch()
         runner = CliRunner()
         with (
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=[]),
             patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.get_bronze_row_by_name", return_value={"doc_id": "doc1"}),
+            patch("main.get_all_bronze_rows", return_value=[{"doc_id": "doc1", "doc_name": "doc1"}]),
             patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
             patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
@@ -79,11 +85,14 @@ class TestCli:
             assert mock_fmt.call_args[1]["force"] is True
 
     def test_force_flag_passes_per_step_force(self, tmp_path):
+        (tmp_path / "doc1.pdf").touch()
         runner = CliRunner()
         with (
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=[]),
             patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.get_bronze_row_by_name", return_value={"doc_id": "doc1"}),
+            patch("main.get_all_bronze_rows", return_value=[{"doc_id": "doc1", "doc_name": "doc1"}]),
             patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
             patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
@@ -98,11 +107,14 @@ class TestCli:
             assert mock_fmt.call_args[1]["force"] is True
 
     def test_parse_date_flag_passes_since(self, tmp_path):
+        (tmp_path / "doc1.pdf").touch()
         runner = CliRunner()
         with (
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=[]),
             patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.get_bronze_row_by_name", return_value={"doc_id": "doc1"}),
+            patch("main.get_all_bronze_rows", return_value=[{"doc_id": "doc1", "doc_name": "doc1"}]),
             patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout"),
             patch("main.run_formatting"),
@@ -134,11 +146,14 @@ class TestCli:
             mock_fmt.assert_not_called()
 
     def test_step_ocr_only(self, tmp_path):
+        (tmp_path / "doc1.pdf").touch()
         runner = CliRunner()
         with (
             patch("main.get_supabase_client"),
             patch("main.ingest") as mock_ingest,
             patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.get_bronze_row_by_name", return_value={"doc_id": "doc1"}),
+            patch("main.get_all_bronze_rows", return_value=[{"doc_id": "doc1", "doc_name": "doc1"}]),
             patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
             patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
@@ -151,11 +166,14 @@ class TestCli:
             mock_fmt.assert_not_called()
 
     def test_step_scout_only(self, tmp_path):
+        (tmp_path / "doc1.pdf").touch()
         runner = CliRunner()
         with (
             patch("main.get_supabase_client"),
             patch("main.ingest") as mock_ingest,
             patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.get_bronze_row_by_name", return_value={"doc_id": "doc1"}),
+            patch("main.get_all_bronze_rows", return_value=[{"doc_id": "doc1", "doc_name": "doc1"}]),
             patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
             patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
@@ -168,11 +186,14 @@ class TestCli:
             mock_fmt.assert_not_called()
 
     def test_step_formatting_only(self, tmp_path):
+        (tmp_path / "doc1.pdf").touch()
         runner = CliRunner()
         with (
             patch("main.get_supabase_client"),
             patch("main.ingest") as mock_ingest,
             patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.get_bronze_row_by_name", return_value={"doc_id": "doc1"}),
+            patch("main.get_all_bronze_rows", return_value=[{"doc_id": "doc1", "doc_name": "doc1"}]),
             patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
             patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
@@ -185,11 +206,14 @@ class TestCli:
             mock_fmt.assert_called_once_with("doc1", ANY, force=False)
 
     def test_multiple_steps(self, tmp_path):
+        (tmp_path / "doc1.pdf").touch()
         runner = CliRunner()
         with (
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=[]) as mock_ingest,
             patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.get_bronze_row_by_name", return_value={"doc_id": "doc1"}),
+            patch("main.get_all_bronze_rows", return_value=[{"doc_id": "doc1", "doc_name": "doc1"}]),
             patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
             patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,
@@ -221,6 +245,8 @@ class TestCli:
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=["doc1"]),
             patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.get_bronze_row_by_name", return_value={"doc_id": "doc1"}),
+            patch("main.get_all_bronze_rows", return_value=[{"doc_id": "doc1", "doc_name": "test"}]),
             patch("main.run_ocr", return_value=OCR_DONE),
             patch("main.run_scout"),
             patch("main.run_formatting", return_value=fmt_with_failures),
@@ -268,6 +294,8 @@ class TestCli:
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=["doc1"]),
             patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.get_bronze_row_by_name", return_value={"doc_id": "doc1"}),
+            patch("main.get_all_bronze_rows", return_value=[{"doc_id": "doc1", "doc_name": "test"}]),
             patch("main.run_ocr", return_value=OCR_DONE),
             patch("main.run_scout"),
             patch("main.run_formatting", return_value=fmt_with_history),
@@ -283,11 +311,14 @@ class TestCli:
             assert "\"tables\": [" in result.output
 
     def test_no_step_flag_runs_all(self, tmp_path):
+        (tmp_path / "doc1.pdf").touch()
         runner = CliRunner()
         with (
             patch("main.get_supabase_client"),
             patch("main.ingest", return_value=[]) as mock_ingest,
             patch("main.get_all_doc_ids", return_value=["doc1"]),
+            patch("main.get_bronze_row_by_name", return_value={"doc_id": "doc1"}),
+            patch("main.get_all_bronze_rows", return_value=[{"doc_id": "doc1", "doc_name": "doc1"}]),
             patch("main.run_ocr", return_value=OCR_DONE) as mock_ocr,
             patch("main.run_scout") as mock_scout,
             patch("main.run_formatting", return_value=FMT_DONE) as mock_fmt,

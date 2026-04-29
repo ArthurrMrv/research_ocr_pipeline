@@ -220,7 +220,7 @@ def _merge_assumption_drafts(drafts: list[dict]) -> dict:
                 all_techniques.append(t)
 
     soph_values = [d.get("sophistication_index", 1) for d in drafts]
-    avg_soph = round(sum(soph_values) / len(drafts), 1) if drafts else 1
+    avg_soph = int(round(sum(soph_values) / len(drafts))) if drafts else 1
 
     return {
         "assumptions": all_assumptions,
@@ -543,8 +543,8 @@ def run_formatting(
     ocr_chunks = get_ocr_chunks(supa_client, doc_id)
     if not ocr_chunks:
         raise ValueError(f"No OCR results for doc_id={doc_id}; run OCR first")
-    if existing_formatting:
-        delete_formatting_results(supa_client, doc_id)
+    # Do NOT delete existing results upfront — upsert per-step overwrites only what succeeds.
+    # Failed steps keep their previous result rather than being erased to nothing.
     ocr_text = "\n\n".join(chunk["content"] for chunk in ocr_chunks)
     ocr_by_page = {chunk.get("page_number"): chunk["content"] for chunk in ocr_chunks}
     all_pages_given = _sorted_page_numbers(ocr_chunks)

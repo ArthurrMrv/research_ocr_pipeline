@@ -1,0 +1,198 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2cm]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{parskip}
+
+\definecolor{accent}{HTML}{2563EB}
+\definecolor{lightgray}{HTML}{F3F4F6}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=accent,
+    urlcolor=accent,
+}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\title{\textbf{Dashboard Columns Reference}\\[0.3em]
+\large All columns surfaced in \texttt{dashboard/data.py}}
+\author{Ingestion Pipeline Reports}
+\date{\today}
+
+\begin{document}
+
+%% ============================================================
+\section{Model Export Columns (\texttt{MODEL\_EXPORT\_COLUMNS})}
+\label{sec:model-export}
+%% ============================================================
+
+These columns are \textbf{computed} in \texttt{\_build\_model\_export\_df} by merging data from three formatting steps (\texttt{extract\_model\_inputs}, \texttt{extract\_model\_methodology}, \texttt{extract\_model\_assumptions}) plus \texttt{bronze\_mapping}. They appear in the CSV export and the Model Export dashboard page.
+
+\begin{longtable}{@{} L{2.8cm} L{2.2cm} L{3.2cm} L{2.2cm} L{2.5cm} L{3cm} @{}}
+\toprule
+\textbf{Column} & \textbf{Source} & \textbf{Description} & \textbf{Type} & \textbf{Example} & \textbf{Utility} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Column} & \textbf{Source} & \textbf{Description} & \textbf{Type} & \textbf{Example} & \textbf{Utility} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+\texttt{document\_ name}
+  & \texttt{bronze\_ mapping}
+  & Human-readable PDF filename.
+  & \texttt{str}
+  & \texttt{"JPMorgan\_ 20240315.pdf"}
+  & Row label so consumers know which report the data came from. \\
+\midrule
+
+\texttt{model\_name}
+  & inputs
+  & Exact model name or label used in the report for the equity return forecast approach.
+  & \texttt{str}
+  & \texttt{"Building Blocks"}
+  & Identifies the forecasting methodology by its report-native name. \\
+\midrule
+
+\texttt{notes\_model}
+  & inputs
+  & Optional short keywords summarizing the approach.
+  & \texttt{str}
+  & \texttt{"DDM, macro overlay"}
+  & Quick at-a-glance characterization. \\
+\midrule
+
+\texttt{variables}
+  & inputs
+  & Comma-separated list of primary input variables. Serialized from a JSON array.
+  & \texttt{str}
+  & \texttt{"earnings growth, dividend yield, P/E ratio"}
+  & Enumerates what the model consumes for cross-institution comparison. \\
+\midrule
+
+\texttt{variables\_nb}
+  & computed
+  & Count of items in the \texttt{variables} array.
+  & \texttt{int}
+  & \texttt{7}
+  & Quick complexity proxy. \\
+\midrule
+
+\texttt{steps\_summary}
+  & methodology
+  & Concise narrative of the end-to-end equity forecast approach.
+  & \texttt{str}
+  & \texttt{"Decomposes returns into dividend yield, earnings growth\ldots"}
+  & One-paragraph overview for comparison tables. \\
+\midrule
+
+\texttt{steps\_detailed}
+  & methodology
+  & Detailed narrative including all stated assumptions, constraints, and conditions.
+  & \texttt{str} (multi-para.)
+  & \emph{(long text)}
+  & Full audit trail for deep-dive analysis. \\
+\midrule
+
+\texttt{variables\_ importants}
+  & inputs
+  & Comma-separated list of variables the report flags as important.
+  & \texttt{str}
+  & \texttt{"earnings growth, valuation"}
+  & Highlights which inputs the institution considers most influential. \\
+\midrule
+
+\texttt{assumptions\_ values}
+  & inputs
+  & Bullet-pointed value-type assumptions (numbers, macro climate). Implied ones tagged \texttt{(implied)}.
+  & \texttt{str} (bullets)
+  & \texttt{"* Inflation = 2.5\%\textbackslash n* GDP growth = 2\%"}
+  & Captures numeric assumptions baked into the forecast inputs. \\
+\midrule
+
+\texttt{assumptions\_ structural}
+  & methodology
+  & Bullet-pointed structural assumptions (variable relationships, functional forms).
+  & \texttt{str} (bullets)
+  & \texttt{"* Returns decompose additively"}
+  & Captures methodological assumptions about how inputs interact. \\
+\midrule
+
+\texttt{uses\_ regressions}
+  & methodology
+  & Whether the model uses regression techniques.
+  & \texttt{int}: 0 or 1
+  & \texttt{1}
+  & Binary tag for cross-institution technique comparison. \\
+\midrule
+
+\texttt{uses\_ simulations}
+  & methodology
+  & Whether the model uses simulation techniques (Monte Carlo, scenario, stochastic).
+  & \texttt{int}: 0 or 1
+  & \texttt{0}
+  & Binary tag for technique comparison. \\
+\midrule
+
+\texttt{uses\_averages}
+  & methodology
+  & Whether the model uses historical / long-run / equilibrium averages as inputs.
+  & \texttt{int}: 0 or 1
+  & \texttt{1}
+  & Binary tag for technique comparison. \\
+\midrule
+
+\texttt{uses\_mean\_ reversion}
+  & methodology
+  & Whether the model assumes mean reversion of any variable.
+  & \texttt{int}: 0 or 1
+  & \texttt{1}
+  & Binary tag for technique comparison. \\
+\midrule
+
+\texttt{assumptions\_ classified}
+  & assumptions
+  & Bullet-pointed assumptions, each tagged with a classification and building block.
+  & \texttt{str} (bullets)
+  & \texttt{"* [mean-reversion] P/E reverts to long-run avg (re: valuation)"}
+  & Unified classified view for systematic comparison. \\
+\midrule
+
+\texttt{techniques\_ used}
+  & assumptions
+  & Comma-separated list of analytical techniques found in the report, each with its complexity score. Serialized from an array of \texttt{\{technique\_name, complexity\}} objects.
+  & \texttt{str}
+  & \texttt{"DDM (7), Monte Carlo (8), historical avg (2)"}
+  & Enumerates specific techniques for cross-institution comparison. \\
+\midrule
+
+\texttt{sophistication\_ index}
+  & assumptions
+  & Overall 1--10 score reflecting the methodological sophistication of the model, grounded in a 5-tier reference scale (1--2 simple averages, 3--4 regression/decomposition, 5--6 multi-factor/scenario, 7--8 simulation/Bayesian, 9--10 DSGE/ML).
+  & \texttt{int} in $[1, 10]$
+  & \texttt{6}
+  & Single numeric score for ranking and comparing model complexity across institutions. \\
+\midrule
+
+\texttt{sophistication\_ explanation}
+  & assumptions
+  & Brief justification (1--3 sentences) for the assigned sophistication score.
+  & \texttt{str}
+  & \texttt{"Uses multi-factor decomposition with scenario overlays\ldots"}
+  & Audit trail so researchers can verify the sophistication rating. \\
+
+\end{longtable}
+
+
+\end{document}

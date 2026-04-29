@@ -148,7 +148,7 @@ class TestExtractModelAssumptionsContract:
                 {"technique_name": "building-block approach", "complexity": 5},
                 {"technique_name": "mean-reversion model", "complexity": 6},
             ],
-            "sophistication_index": 5.5,
+            "sophistication_index": 6,
             "sophistication_explanation": "The model relies on a building-block approach with mean-reversion assumptions, representing intermediate sophistication.",
         }
 

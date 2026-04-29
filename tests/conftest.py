@@ -1,8 +1,15 @@
 import io
 import os
+import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
+# Make dashboard/ importable so tests can do `from dashboard import data`
+_dashboard_dir = str(Path(__file__).resolve().parent.parent / "dashboard")
+if _dashboard_dir not in sys.path:
+    sys.path.insert(0, _dashboard_dir)
 from PIL import Image
 
 

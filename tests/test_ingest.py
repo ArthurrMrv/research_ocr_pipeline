@@ -54,6 +54,15 @@ class TestIngest:
                     if field == "doc_id":
                         row = bronze_rows.get(value)
                         result.data = [row] if row else []
+                    elif field == "doc_name":
+                        # Match by basename of stored file_path
+                        matched = [
+                            row for row in bronze_rows.values()
+                            if os.path.basename(row.get("file_path", "")) == value
+                        ]
+                        result.data = matched
+                    else:
+                        result.data = []
                     return chain
 
                 chain.eq.side_effect = eq_side_effect
